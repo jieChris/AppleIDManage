@@ -713,7 +713,7 @@
 
   async function handleAuthSubmit(event) {
     event.preventDefault();
-    const password = elements.authPassword?.value || '';
+    const password = elements.authPassword?.value.trim() || '';
     if (!password) {
       if (elements.authError) elements.authError.textContent = '请输入门禁密码';
       return;
