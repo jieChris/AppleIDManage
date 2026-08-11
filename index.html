@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171a17" />
+    <meta name="description" content="本地 Apple ID 账号资料管理器" />
+    <title>Vault / 本地账号档案柜</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="background-grid" aria-hidden="true"></div>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="返回顶部">
+          <span class="brand-mark"><span></span><span></span><span></span></span>
+          <span class="brand-copy">
+            <strong>VAULT / 01</strong>
+            <small>LOCAL ACCOUNT ARCHIVE</small>
+          </span>
+        </a>
+        <div class="topbar-actions">
+          <span class="local-badge"><i></i> 只存本机</span>
+          <button class="clear-button" id="clearAllButton" type="button">清空全部</button>
+        </div>
+      </header>
+
+      <div class="app-layout" id="top">
+        <aside class="sidebar">
+          <div class="sidebar-intro">
+            <span class="eyebrow">ARCHIVE STATUS</span>
+            <h1>你的账号，<br /><em>一眼可取。</em></h1>
+            <p>贴入原始资料，整理为一座只属于你的本地档案柜。</p>
+          </div>
+
+          <div class="stats-grid" aria-label="档案统计">
+            <div class="stat-card stat-card-main">
+              <span>全部档案</span>
+              <strong id="totalCount">0</strong>
+              <small>RECORDS</small>
+            </div>
+            <div class="stat-card">
+              <span>资料完整</span>
+              <strong id="completeCount">0</strong>
+              <small>READY</small>
+            </div>
+            <div class="stat-card stat-card-warn">
+              <span>待检查</span>
+              <strong id="incompleteCount">0</strong>
+              <small>REVIEW</small>
+            </div>
+          </div>
+
+          <nav class="filter-nav" aria-label="档案筛选">
+            <span class="eyebrow">VIEW MODE</span>
+            <button class="filter-button is-active" type="button" data-filter="all">
+              <span class="filter-dot"></span>全部档案
+              <span class="filter-arrow">→</span>
+            </button>
+            <button class="filter-button" type="button" data-filter="incomplete">
+              <span class="filter-dot is-warn"></span>待检查
+              <span class="filter-arrow">→</span>
+            </button>
+          </nav>
+
+          <div class="sidebar-footnote">
+            <span class="footnote-mark">✳</span>
+            <p>浏览器站点数据被清除后，保存在这里的资料也会随之消失。</p>
+          </div>
+        </aside>
+
+        <main class="workspace">
+          <section class="hero-row">
+            <div>
+              <span class="eyebrow">PERSONAL DATA / 2026</span>
+              <h2>账号档案柜</h2>
+            </div>
+            <div class="hero-note">
+              <span class="hero-line"></span>
+              <span>FAST PARSE<br />ONE-CLICK COPY</span>
+            </div>
+          </section>
+
+          <section class="import-panel panel">
+            <div class="panel-heading">
+              <div>
+                <span class="section-number">01 / IMPORT</span>
+                <h3>批量导入</h3>
+              </div>
+              <span class="panel-status"><i></i>READY TO RECEIVE</span>
+            </div>
+
+            <label class="textarea-label" for="importInput">粘贴账号资料</label>
+            <textarea
+              id="importInput"
+              spellcheck="false"
+              placeholder="账号----密码----问题1----问题2----问题3----出生日期----国家
+手机号|取码链接"
+            ></textarea>
+            <div class="import-help">
+              <div class="format-notes">
+                <span><b>可识别</b> ---- / 连续空格 / Tab / 账号 - 密码</span>
+                <span><b>取码行</b> 手机号|http(s)://...</span>
+              </div>
+              <button class="primary-button" id="parseButton" type="button">
+                <span>解析并存入档案柜</span><b>↗</b>
+              </button>
+            </div>
+            <div class="privacy-line">
+              <span class="privacy-lock">⌁</span>
+              <span>资料只会留在当前浏览器。取码链接需要允许 CORS，页面才能自动读取其中的文字。</span>
+            </div>
+            <div class="import-feedback" id="importFeedback" aria-live="polite"></div>
+          </section>
+
+          <section class="records-section">
+            <div class="section-toolbar">
+              <div>
+                <span class="section-number">02 / ARCHIVE</span>
+                <h3>已保存的账号</h3>
+              </div>
+              <label class="search-box" for="searchInput">
+                <span aria-hidden="true">⌕</span>
+                <input id="searchInput" type="search" placeholder="搜索账号、手机号、国家…" autocomplete="off" />
+                <kbd>/</kbd>
+              </label>
+            </div>
+
+            <div class="records-list" id="recordsList"></div>
+            <div class="empty-state" id="emptyState" hidden></div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <dialog class="confirm-dialog" id="confirmDialog" aria-labelledby="confirmTitle">
+      <div class="confirm-dialog-panel">
+        <span class="section-number">CONFIRM ACTION</span>
+        <h2 id="confirmTitle">确认操作</h2>
+        <p id="confirmMessage"></p>
+        <div class="confirm-actions">
+          <button type="button" data-confirm="cancel">先不操作</button>
+          <button class="confirm-primary" type="button" data-confirm="accept">确认继续</button>
+        </div>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
