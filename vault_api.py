@@ -7,11 +7,10 @@ import argparse
 import json
 import os
 import secrets
-import shutil
 import sqlite3
 import tempfile
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -284,28 +283,17 @@ def load_key(path: str | Path) -> bytes:
     return key
 
 
-def backup_database(db_path: str | Path, key_path: str | Path, output_root: str | Path) -> Path:
-    source_path = Path(db_path)
-    key_source = Path(key_path)
-    root = Path(output_root)
-    root.mkdir(parents=True, exist_ok=True)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    output_dir = root / today
-    output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    database_target = output_dir / "vault.db"
-    temporary_target = output_dir / "vault.db.tmp"
-    if temporary_target.exists():
-        temporary_target.unlink()
-    with sqlite3.connect(source_path) as source, sqlite3.connect(temporary_target) as target:
+def backup_sqlite_database(db_path: str | Path, output_path: str | Path) -> Path:
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.tmp")
+    if temporary.exists():
+        temporary.unlink()
+    with sqlite3.connect(db_path) as source, sqlite3.connect(temporary) as target:
         source.backup(target)
-    temporary_target.replace(database_target)
-    shutil.copyfile(key_source, output_dir / "vault.key")
-    (output_dir / "vault.db").chmod(0o600)
-    (output_dir / "vault.key").chmod(0o600)
-    for old_dir in sorted((item for item in root.iterdir() if item.is_dir()), reverse=True)[7:]:
-        shutil.rmtree(old_dir)
-    root.chmod(0o700)
-    return output_dir
+    temporary.replace(output)
+    output.chmod(0o600)
+    return output
 
 
 class VaultServer(ThreadingHTTPServer):
@@ -446,16 +434,17 @@ def self_test() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--backup", action="store_true")
+    parser.add_argument("--backup-sqlite", action="store_true")
     parser.add_argument("--db", default=os.getenv("VAULT_DB", "/data/vault.db"))
     parser.add_argument("--key", default=os.getenv("VAULT_KEY", "/run/secrets/vault.key"))
-    parser.add_argument("--backup-root", default=os.getenv("VAULT_BACKUP_ROOT", "/backups"))
+    parser.add_argument("--output", default="")
     args = parser.parse_args()
     if args.self_test:
         self_test()
-    elif args.backup:
-        load_key(args.key)
-        print(backup_database(args.db, args.key, args.backup_root))
+    elif args.backup_sqlite:
+        if not args.output:
+            parser.error("--backup-sqlite requires --output")
+        print(backup_sqlite_database(args.db, args.output))
     else:
         serve(Path(args.db), Path(args.key))
 

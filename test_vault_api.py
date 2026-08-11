@@ -4,7 +4,7 @@ import json
 import threading
 import urllib.request
 
-from vault_api import VaultError, VaultHandler, VaultServer, VaultStore
+from vault_api import VaultError, VaultHandler, VaultServer, VaultStore, backup_sqlite_database
 
 
 def record(account="a@example.com", password="secret", updated_at="2026-08-12T00:00:00Z"):
@@ -76,6 +76,16 @@ class VaultStoreTests(unittest.TestCase):
 
         with self.assertRaisesRegex(VaultError, "校验失败"):
             store.get_state()
+
+    def test_sqlite_backup_uses_online_backup_without_key_access(self):
+        store = self.make_store()
+        store.sync([record()], {}, "")
+        target = f"{self.temp_dir.name}/backup.db"
+
+        backup_sqlite_database(f"{self.temp_dir.name}/vault.db", target)
+
+        restored = VaultStore(target, b"k" * 32)
+        self.assertEqual(restored.get_state()["records"][0]["account"], "a@example.com")
 
 
 class VaultApiTests(unittest.TestCase):
