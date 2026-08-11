@@ -102,6 +102,7 @@
       hasContact: false,
       smsCode: '',
       codeStatus: 'idle',
+      codeError: '',
       codeCheckedAt: '',
       updatedAt: new Date().toISOString(),
     };
@@ -208,6 +209,7 @@
       codeUrl: clean(record.codeUrl),
       smsCode: /^\d{6}$/.test(asText(record.smsCode)) ? asText(record.smsCode) : '',
       codeStatus,
+      codeError: clean(record.codeError),
       codeCheckedAt: clean(record.codeCheckedAt),
       updatedAt: clean(record.updatedAt) || new Date().toISOString(),
     };
@@ -265,14 +267,17 @@
         next.codeUrl = previous.codeUrl;
         next.smsCode = previous.smsCode;
         next.codeStatus = previous.codeStatus;
+        next.codeError = previous.codeError;
         next.codeCheckedAt = previous.codeCheckedAt;
       } else if (!codeChanged) {
         next.smsCode = previous.smsCode;
         next.codeStatus = previous.codeStatus;
+        next.codeError = previous.codeError;
         next.codeCheckedAt = previous.codeCheckedAt;
       } else {
         next.smsCode = '';
         next.codeStatus = 'idle';
+        next.codeError = '';
         next.codeCheckedAt = '';
       }
 
@@ -316,6 +321,32 @@
     }).format(date);
   }
 
+  function getCodeRequestUrls(url, pageProtocol = typeof location === 'undefined' ? 'https:' : location.protocol) {
+    const source = asText(url);
+    try {
+      const parsed = new URL(source);
+      if (pageProtocol === 'https:' && parsed.protocol === 'http:') {
+        parsed.protocol = 'https:';
+        return [parsed.href, source];
+      }
+    } catch {
+      return [source];
+    }
+    return [source];
+  }
+
+  function getCodeFailureMessage(url, pageProtocol = typeof location === 'undefined' ? 'https:' : location.protocol) {
+    try {
+      const parsed = new URL(url);
+      if (pageProtocol === 'https:' && parsed.protocol === 'http:') {
+        return '取码链接是 HTTP，HTTPS 页面无法自动读取';
+      }
+    } catch {
+      return '取码链接格式无效';
+    }
+    return '取码链接未开放 CORS，无法自动读取';
+  }
+
   function runSelfCheck() {
     const dash = parseImport(
       'a@example.com----pass----Q1----Q2----Q3----1984/2/25----美国\n+18178668072|https://example.com/code',
@@ -332,6 +363,9 @@
     console.assert(extractSixDigitCode('时间 12:34:56，日期 2026-08-11') === '');
     console.assert(extractSixDigitCode('时间 123456') === '');
     console.assert(extractSixDigitCode('request id 1234567890') === '');
+    console.assert(getCodeRequestUrls('http://sms.test/code', 'https:')[0] === 'https://sms.test/code');
+    console.assert(getCodeFailureMessage('http://sms.test/code', 'https:').includes('HTTP'));
+    console.assert(getCodeFailureMessage('https://sms.test/code', 'https:').includes('CORS'));
     console.log('parser self-check: ok');
   }
 
@@ -421,7 +455,10 @@
     if (status === 'found') {
       return `<button class="code-status is-found" type="button" data-action="copy" data-record-id="${escapeHtml(record.id)}" data-field="verificationCode" aria-label="复制验证码">${escapeHtml(record.smsCode)} <span>复制</span></button>`;
     }
-    if (status === 'blocked') return '<span class="code-status is-blocked">无法读取</span>';
+    if (status === 'blocked') {
+      const reason = record.codeError || '取码链接未开放 CORS，无法自动读取';
+      return `<span class="code-status is-blocked" title="${escapeHtml(reason)}">无法读取</span>`;
+    }
     if (status === 'empty') return '<span class="code-status is-empty">无验证码</span>';
     return '<span class="code-status is-loading">等待读取</span>';
   }
@@ -518,6 +555,44 @@
     }
   }
 
+  function getRecordCard(id) {
+    return [...elements.recordsList.querySelectorAll('.record-card')].find((card) => card.dataset.recordId === id);
+  }
+
+  function updatePasswordUI(record) {
+    const card = getRecordCard(record.id);
+    if (!card) return;
+    const revealed = state.revealed.has(record.id);
+    const passwordButton = card.querySelector('[data-field="password"]');
+    const passwordText = passwordButton?.querySelector('span:first-child');
+    if (passwordText) passwordText.textContent = revealed && record.password ? record.password : (record.password ? '••••••••' : '未填写');
+    const toggleButton = card.querySelector('[data-action="toggle-password"]');
+    if (toggleButton) {
+      toggleButton.textContent = revealed ? '隐藏' : '显密';
+      toggleButton.setAttribute('aria-label', revealed ? '隐藏密码' : '显示密码');
+    }
+  }
+
+  function updateCodeUI(record) {
+    const card = getRecordCard(record.id);
+    if (!card) return;
+    const result = card.querySelector('.code-result');
+    if (result) result.innerHTML = codeStatusMarkup(record);
+    const refreshButton = card.querySelector('[data-action="refresh-code"]');
+    if (refreshButton) {
+      refreshButton.disabled = record.codeStatus === 'loading';
+      refreshButton.textContent = record.codeStatus === 'loading' ? '读取中' : '刷新取码';
+    }
+    const meta = card.querySelector('.code-meta');
+    if (meta) {
+      const checkedAt = meta.querySelector('.checked-at') || document.createElement('span');
+      checkedAt.className = 'checked-at';
+      checkedAt.textContent = formatCheckedAt(record.codeCheckedAt);
+      checkedAt.hidden = !record.codeCheckedAt;
+      if (!checkedAt.parentElement) meta.append(checkedAt);
+    }
+  }
+
   function setFeedback(result, duplicateCount = 0) {
     const success = result.records.length;
     const errorCount = result.errors.length;
@@ -600,24 +675,37 @@
     }
 
     record.codeStatus = 'loading';
+    record.codeError = '';
     record.codeCheckedAt = new Date().toISOString();
     saveRecords(state.records);
-    render();
+    updateCodeUI(record);
 
     try {
-      const responseText = await fetchTextWithTimeout(record.codeUrl);
+      let responseText;
+      let lastError;
+      for (const requestUrl of getCodeRequestUrls(record.codeUrl)) {
+        try {
+          responseText = await fetchTextWithTimeout(requestUrl);
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (responseText === undefined) throw lastError || new Error('code request failed');
       const code = extractSixDigitCode(responseText);
       record.smsCode = code;
       record.codeStatus = code ? 'found' : 'empty';
+      record.codeError = '';
       notify(code ? '已读取到 6 位验证码' : '链接中没有符合条件的验证码', code ? 'success' : 'info');
     } catch {
       record.smsCode = '';
       record.codeStatus = 'blocked';
-      notify('取码链接无法被当前页面读取，仍可点击链接查看', 'warning');
+      record.codeError = getCodeFailureMessage(record.codeUrl);
+      notify(`${record.codeError}，仍可点击链接查看`, 'warning');
     }
     record.codeCheckedAt = new Date().toISOString();
     saveRecords(state.records);
-    render();
+    updateCodeUI(record);
   }
 
   function handleImport() {
@@ -707,7 +795,7 @@
     } else if (action === 'toggle-password') {
       if (state.revealed.has(recordId)) state.revealed.delete(recordId);
       else state.revealed.add(recordId);
-      render();
+      updatePasswordUI(record);
     } else if (action === 'refresh-code') {
       refreshCode(recordId);
     } else if (action === 'delete') {
