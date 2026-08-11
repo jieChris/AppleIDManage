@@ -2,6 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'apple-id-vault-records';
+  const AUTH_STORAGE_KEY = 'apple-id-vault-auth';
   const VALID_CODE_STATUSES = new Set(['idle', 'loading', 'found', 'empty', 'blocked']);
   const CORE_FIELDS = ['account', 'password', 'birthDate', 'country'];
   const CODE_LABEL_RE = /(?:验证码|校验码|动态码|安全码|短信码|一次性密码|otp\b|one[-\s]?time(?:\s+password)?|verification(?:\s+code)?|security\s+code|passcode|\bcode\b)/iu;
@@ -477,10 +478,19 @@
   if (typeof document === 'undefined') return;
 
   const legacyRecords = loadRecords();
+
+  function readStoredAuthHeader() {
+    try {
+      return sessionStorage.getItem(AUTH_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
+
   const state = {
     records: [],
     legacyRecords,
-    authHeader: '',
+    authHeader: readStoredAuthHeader(),
     revision: 0,
     deleted: {},
     clearAt: '',
@@ -520,6 +530,16 @@
   };
 
   state.confirmAction = null;
+
+  function setAuthHeader(value) {
+    state.authHeader = value;
+    try {
+      if (value) sessionStorage.setItem(AUTH_STORAGE_KEY, value);
+      else sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch {
+      // Private browsing or storage restrictions should not block in-memory login.
+    }
+  }
 
   function notify(message, tone = 'info') {
     if (!elements.toast) return;
@@ -677,7 +697,7 @@
       }
     } catch (error) {
       if (error?.status === 401) {
-        state.authHeader = '';
+        setAuthHeader('');
         state.records = fallbackRecords;
         setSyncStatus('auth');
         render();
@@ -707,7 +727,7 @@
       return;
     }
 
-    state.authHeader = `Basic ${encoded}`;
+    setAuthHeader(`Basic ${encoded}`);
     if (elements.authSubmit) elements.authSubmit.disabled = true;
     if (elements.authError) elements.authError.textContent = '验证中…';
     await loadServerState(true);
@@ -717,7 +737,7 @@
       if (elements.authDialog?.close) elements.authDialog.close();
       else elements.authDialog?.removeAttribute('open');
     } else {
-      state.authHeader = '';
+      setAuthHeader('');
       if (state.syncStatus !== 'auth') setSyncStatus('auth');
       if (elements.authError?.textContent === '验证中…') {
         elements.authError.textContent = '门禁验证失败，请重试';
@@ -1181,6 +1201,11 @@
   });
 
   render();
-  setSyncStatus('auth');
-  showAuthDialog();
+  if (state.authHeader) {
+    setSyncStatus('loading');
+    loadServerState(true);
+  } else {
+    setSyncStatus('auth');
+    showAuthDialog();
+  }
 })();
