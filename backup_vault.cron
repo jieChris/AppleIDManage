@@ -1,0 +1,4 @@
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+17 3 * * * root /root/appleid-vault/backup_vault.sh >>/var/log/appleid-vault-backup.log 2>&1

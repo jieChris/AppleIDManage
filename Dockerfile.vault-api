@@ -1,0 +1,14 @@
+FROM python:3.12.3-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN groupadd --gid 10001 vault \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin vault \
+    && pip install --no-cache-dir cryptography==41.0.7
+
+WORKDIR /app
+COPY vault_api.py fetch_proxy.py /app/
+
+USER 0:0
+ENTRYPOINT ["/usr/local/bin/python", "/app/vault_api.py"]
