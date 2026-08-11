@@ -94,6 +94,11 @@
     return { phone, codeUrl };
   }
 
+  function parseRemarkLine(line) {
+    const match = asText(line).match(/^备注(?:\||：|:)\s*(.*)$/u);
+    return match ? { remark: clean(match[1]) } : null;
+  }
+
   function createParsedRecord(accountData) {
     return {
       id: makeId(),
@@ -118,6 +123,16 @@
     lines.forEach((rawLine, index) => {
       const line = rawLine.trim();
       if (!line) return;
+
+      const remark = parseRemarkLine(line);
+      if (remark) {
+        if (!records.length) {
+          errors.push({ line: index + 1, raw: line, message: '备注行需要放在账号行后面' });
+          return;
+        }
+        records[records.length - 1].remark = remark.remark;
+        return;
+      }
 
       if (line.includes('|')) {
         const contact = parseContactLine(line);
@@ -291,6 +306,30 @@
     return { records: result, duplicateCount };
   }
 
+  function formatRecordForExport(record) {
+    const normalized = normalizeRecord(record);
+    if (!normalized?.account) return '';
+
+    const lines = [[
+      normalized.account,
+      normalized.password,
+      ...normalized.questions,
+      normalized.birthDate,
+      normalized.country,
+    ].join('----')];
+
+    if (normalized.phone && normalized.codeUrl) lines.push(`${normalized.phone}|${normalized.codeUrl}`);
+    if (normalized.remark) lines.push(`备注|${normalized.remark}`);
+    return lines.join('\n');
+  }
+
+  function formatExportText(records) {
+    return (Array.isArray(records) ? records : [])
+      .map(formatRecordForExport)
+      .filter(Boolean)
+      .join('\n');
+  }
+
   function isIncomplete(record) {
     if (!record) return true;
     const coreValues = [
@@ -456,6 +495,18 @@
     console.assert(getCodeFailureMessage('https://sms.test/code', 'https:').includes('代理'));
     console.assert(dash.records[0]?.remark === '');
     console.assert(normalizeRecord({ account: 'a@example.com', remark: '个人备注' }).remark === '个人备注');
+    const exported = formatExportText([{
+      account: 'a@example.com',
+      password: 'secret',
+      questions: ['Q1', 'Q2', 'Q3'],
+      birthDate: '1984/2/25',
+      country: '美国',
+      phone: '+18178668072',
+      codeUrl: 'https://example.com/code',
+      remark: '长期使用',
+    }]);
+    console.assert(exported === 'a@example.com----secret----Q1----Q2----Q3----1984/2/25----美国\n+18178668072|https://example.com/code\n备注|长期使用');
+    console.assert(parseImport(exported).records[0]?.remark === '长期使用');
     console.log('parser self-check: ok');
   }
 
@@ -463,6 +514,8 @@
     parseImport,
     parseAccountLine,
     parseContactLine,
+    formatRecordForExport,
+    formatExportText,
     extractSixDigitCode,
     getCodeProxyUrl,
     getCodeRequestUrls,
@@ -507,6 +560,7 @@
   const elements = {
     importInput: document.querySelector('#importInput'),
     parseButton: document.querySelector('#parseButton'),
+    exportAllButton: document.querySelector('#exportAllButton'),
     clearAllButton: document.querySelector('#clearAllButton'),
     syncButton: document.querySelector('#syncButton'),
     syncStatus: document.querySelector('#syncStatus'),
@@ -554,6 +608,9 @@
     const writable = state.canWrite;
     if (elements.parseButton) elements.parseButton.disabled = !writable;
     if (elements.clearAllButton) elements.clearAllButton.disabled = !writable;
+    if (elements.exportAllButton) {
+      elements.exportAllButton.disabled = !state.records.length || ['loading', 'syncing', 'auth'].includes(state.syncStatus);
+    }
     document.querySelectorAll('[data-write]').forEach((control) => {
       control.disabled = !writable;
     });
@@ -1092,6 +1149,25 @@
       });
   }
 
+  function handleExportAll() {
+    if (!state.records.length) {
+      notify('档案柜里没有可导出的账号', 'warning');
+      return;
+    }
+
+    const content = formatExportText(state.records);
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `apple-id-vault-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    notify(`已导出 ${state.records.length} 条账号资料`, 'success');
+  }
+
   function deleteRecord(id) {
     const record = state.records.find((item) => item.id === id);
     if (!record) return;
@@ -1134,6 +1210,7 @@
   }
 
   elements.parseButton.addEventListener('click', handleImport);
+  elements.exportAllButton.addEventListener('click', handleExportAll);
   elements.clearAllButton.addEventListener('click', clearAll);
   elements.syncButton.addEventListener('click', () => loadServerState());
   elements.authForm?.addEventListener('submit', handleAuthSubmit);
