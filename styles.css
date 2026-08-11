@@ -23,6 +23,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   min-width: 320px;
   scroll-behavior: smooth;
@@ -406,7 +410,7 @@ textarea:focus-visible {
 
 .hero-row {
   min-height: 78px;
-  margin-bottom: 36px;
+  margin-bottom: 26px;
 }
 
 .hero-row h2 {
@@ -445,7 +449,7 @@ textarea:focus-visible {
 }
 
 .panel {
-  padding: clamp(24px, 3.1vw, 38px);
+  padding: clamp(20px, 2.4vw, 30px);
   border-radius: var(--radius-xl);
 }
 
@@ -478,7 +482,7 @@ textarea:focus-visible {
 
 .textarea-label {
   display: block;
-  margin: 34px 0 10px;
+  margin: 24px 0 7px;
   color: rgba(23, 27, 24, 0.48);
   font-family: var(--mono);
   font-size: 0.64rem;
@@ -488,9 +492,9 @@ textarea:focus-visible {
 #importInput {
   display: block;
   width: 100%;
-  min-height: 153px;
+  min-height: 118px;
   resize: vertical;
-  padding: 19px 20px;
+  padding: 14px 16px;
   border: 1px solid var(--paper-line);
   border-radius: var(--radius-md);
   outline: 0;
@@ -498,7 +502,7 @@ textarea:focus-visible {
   background: var(--paper-deep);
   font-family: var(--mono);
   font-size: 0.76rem;
-  line-height: 1.8;
+  line-height: 1.6;
   transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 
@@ -536,7 +540,7 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 19px;
-  min-height: 48px;
+  min-height: 43px;
   padding: 0 17px 0 20px;
   border: 1px solid var(--acid-deep);
   border-radius: 10px;
@@ -565,8 +569,8 @@ textarea:focus-visible {
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  margin-top: 24px;
-  padding-top: 16px;
+  margin-top: 17px;
+  padding-top: 12px;
   border-top: 1px dashed var(--paper-line);
   color: rgba(23, 27, 24, 0.42);
   font-size: 0.66rem;
@@ -617,12 +621,12 @@ textarea:focus-visible {
 }
 
 .records-section {
-  margin-top: 64px;
+  margin-top: 45px;
 }
 
 .section-toolbar {
   align-items: flex-end;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 }
 
 .search-box {
@@ -648,7 +652,7 @@ textarea:focus-visible {
 .search-box input {
   width: 100%;
   min-width: 0;
-  height: 41px;
+  height: 35px;
   border: 0;
   outline: 0;
   color: var(--white);
@@ -671,13 +675,13 @@ textarea:focus-visible {
 
 .records-list {
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 
 .record-card {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: var(--radius-lg);
+  border-radius: 16px;
   animation: card-in 420ms both;
 }
 
@@ -687,7 +691,7 @@ textarea:focus-visible {
 
 .record-head {
   align-items: flex-start;
-  padding: 22px 24px 19px;
+  padding: 16px 18px 14px;
   border-bottom: 1px solid var(--paper-line);
 }
 
@@ -695,7 +699,7 @@ textarea:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 11px;
+  gap: 5px 9px;
   min-width: 0;
 }
 
@@ -723,7 +727,7 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 8px;
+  padding: 4px 7px;
   border-radius: 999px;
   font-family: var(--mono);
   font-size: 0.54rem;
@@ -776,14 +780,14 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0 1px;
-  padding: 0 24px;
+  padding: 0 18px;
   background: var(--paper-line);
 }
 
 .data-field {
   min-width: 0;
-  min-height: 78px;
-  padding: 17px 16px 14px;
+  min-height: 61px;
+  padding: 11px 12px 9px;
   background: var(--paper);
 }
 
@@ -798,7 +802,7 @@ textarea:focus-visible {
 
 .field-label {
   display: block;
-  margin-bottom: 9px;
+  margin-bottom: 5px;
   color: rgba(23, 27, 24, 0.43);
   font-family: var(--mono);
   font-size: 0.56rem;
@@ -865,8 +869,8 @@ textarea:focus-visible {
 
 .code-strip {
   align-items: flex-end;
-  gap: 22px;
-  padding: 18px 24px 20px;
+  gap: 14px;
+  padding: 12px 18px 14px;
   border-top: 1px solid rgba(23, 27, 24, 0.13);
   background: rgba(23, 27, 24, 0.035);
 }
@@ -876,19 +880,19 @@ textarea:focus-visible {
 }
 
 .code-result {
-  min-height: 24px;
+  min-height: 20px;
 }
 
 .code-status {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 2px 0;
   border: 0;
   color: var(--ink);
   background: transparent;
   font-family: var(--mono);
-  font-size: 1.05rem;
+  font-size: 0.96rem;
   font-weight: 700;
   letter-spacing: 0.13em;
 }
@@ -924,7 +928,7 @@ textarea:focus-visible {
 .code-meta {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 9px;
   min-width: 0;
 }
 
@@ -1171,7 +1175,7 @@ textarea:focus-visible {
 
   .sidebar {
     position: static;
-    margin-bottom: 48px;
+    margin-bottom: 38px;
   }
 
   .sidebar-intro h1 {
@@ -1222,7 +1226,7 @@ textarea:focus-visible {
   }
 
   .hero-row {
-    margin-bottom: 25px;
+    margin-bottom: 20px;
   }
 
   .hero-row h2 {
@@ -1234,6 +1238,7 @@ textarea:focus-visible {
   }
 
   .panel {
+    padding: 18px 15px;
     border-radius: 22px;
   }
 
@@ -1247,13 +1252,13 @@ textarea:focus-visible {
   }
 
   .records-section {
-    margin-top: 47px;
+    margin-top: 35px;
   }
 
   .section-toolbar {
     align-items: stretch;
     flex-direction: column;
-    gap: 20px;
+    gap: 14px;
   }
 
   .search-box {
@@ -1263,7 +1268,7 @@ textarea:focus-visible {
   .code-strip {
     align-items: flex-start;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
   }
 
   .code-meta {
@@ -1322,7 +1327,7 @@ textarea:focus-visible {
   }
 
   .panel {
-    padding: 22px 17px;
+    padding: 18px 14px;
   }
 
   .panel-status {
@@ -1330,8 +1335,7 @@ textarea:focus-visible {
   }
 
   .record-head {
-    padding-right: 17px;
-    padding-left: 17px;
+    padding: 13px 14px 11px;
   }
 
   .record-actions {
@@ -1340,7 +1344,7 @@ textarea:focus-visible {
 
   .record-grid {
     grid-template-columns: 1fr;
-    padding: 0 17px;
+    padding: 0 13px;
   }
 
   .field-account,
@@ -1350,8 +1354,7 @@ textarea:focus-visible {
   }
 
   .code-strip {
-    padding-right: 17px;
-    padding-left: 17px;
+    padding: 10px 13px 12px;
   }
 
   .code-meta {
