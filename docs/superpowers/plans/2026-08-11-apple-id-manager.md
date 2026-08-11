@@ -198,4 +198,4 @@ git commit -m "feat: wire account manager interactions"
 - Spec coverage: 解析、手机号/URL、验证码、时间排除、localStorage、搜索、复制、删除、响应式、CORS 提示和自检分别覆盖在 Tasks 1–5。
 - Placeholder scan: 无 TBD、TODO、FIXME 或空泛“自行处理”步骤。
 - Type consistency: `parseImport`、`parseAccountLine`、`parseContactLine`、`extractSixDigitCode`、`isIncomplete`、`refreshCode` 和记录字段名在所有任务中一致。
-- Route Deviation: 无；纯静态方案与 CORS ceiling 保持不变。
+- Route Deviation: 2026-08-12：实际取码接口返回 200 但未提供 CORS，且用户链接为 HTTP；纯浏览器 fetch 无法满足“自动读取”需求。因此增加仅内网可达、限制公网目标的服务器取码代理，前端优先走同源代理，直读保留为回退路径。
