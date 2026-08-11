@@ -421,8 +421,9 @@ def drop_privileges() -> None:
 
 
 def serve(db_path: Path, key_path: Path) -> None:
-    store = VaultStore(db_path, load_key(key_path))
+    key = load_key(key_path)
     drop_privileges()
+    store = VaultStore(db_path, key)
     server = VaultServer((HOST, PORT), VaultHandler, store)
     try:
         server.serve_forever()
