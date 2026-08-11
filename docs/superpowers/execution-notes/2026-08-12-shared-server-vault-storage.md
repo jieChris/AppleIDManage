@@ -17,3 +17,5 @@ The Codex in-app browser retained the pre-rotation Basic Auth credential and its
 The original server-wide Basic Auth protected the HTML entrypoint. After the gate password was rotated, browsers with cached credentials repeatedly returned `ERR_INVALID_AUTH_CREDENTIALS` before the application could load. The fix keeps Basic Auth on `/api/vault/` and `/api/fetch-code` only, makes the static shell public, and adds a page-level password dialog that sends the Basic Auth header explicitly to same-origin protected requests. Wrong passwords now return to a retryable in-page error state without a native browser prompt.
 
 The HTML entrypoint also now sends `Cache-Control: no-store` so a previously cached shell cannot keep using the pre-login client after deployment.
+
+Remark autosave now accepts input while another sync is in flight and queues the latest snapshot instead of treating the short `syncing` state as read-only.

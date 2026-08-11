@@ -606,7 +606,7 @@
   }
 
   function syncSnapshot(records, deleted = state.deleted, clearAt = state.clearAt, options = {}) {
-    if (!state.canWrite) return Promise.reject(new Error('共享库不可用，当前为只读状态'));
+    if (!state.canWrite && state.syncStatus !== 'syncing') return Promise.reject(new Error('共享库不可用，当前为只读状态'));
     const { renderResult = true, migrate = false } = options;
     const snapshot = {
       records: records.map(normalizeRecord).filter((record) => record?.account),
@@ -615,7 +615,7 @@
       migrate,
     };
     const task = state.syncQueue.then(async () => {
-      if (!state.canWrite) throw new Error('共享库不可用，当前为只读状态');
+      if (!state.canWrite && state.syncStatus !== 'syncing') throw new Error('共享库不可用，当前为只读状态');
       setSyncStatus('syncing');
       try {
         const payload = await requestVault('sync', {
@@ -1163,7 +1163,7 @@
     if (!remarkInput) return;
     const record = state.records.find((item) => item.id === remarkInput.dataset.recordId);
     if (!record) return;
-    if (!state.canWrite) {
+    if (!state.canWrite && state.syncStatus !== 'syncing') {
       notify('共享库不可用，备注暂时不能保存', 'warning');
       return;
     }
