@@ -97,6 +97,7 @@
     return {
       id: makeId(),
       ...accountData,
+      remark: '',
       phone: '',
       codeUrl: '',
       hasContact: false,
@@ -205,6 +206,7 @@
       questions: [0, 1, 2].map((index) => clean(questions[index])),
       birthDate: clean(record.birthDate),
       country: clean(record.country),
+      remark: clean(record.remark),
       phone: clean(record.phone),
       codeUrl: clean(record.codeUrl),
       smsCode: /^\d{6}$/.test(asText(record.smsCode)) ? asText(record.smsCode) : '',
@@ -259,6 +261,7 @@
         ...previous,
         ...normalized,
         id: previous.id,
+        remark: previous.remark,
         updatedAt: new Date().toISOString(),
       };
 
@@ -366,6 +369,8 @@
     console.assert(getCodeRequestUrls('http://sms.test/code', 'https:')[0] === 'https://sms.test/code');
     console.assert(getCodeFailureMessage('http://sms.test/code', 'https:').includes('HTTP'));
     console.assert(getCodeFailureMessage('https://sms.test/code', 'https:').includes('CORS'));
+    console.assert(dash.records[0]?.remark === '');
+    console.assert(normalizeRecord({ account: 'a@example.com', remark: '个人备注' }).remark === '个人备注');
     console.log('parser self-check: ok');
   }
 
@@ -479,44 +484,54 @@
 
     return `
       <article class="record-card ${incomplete ? 'is-incomplete' : ''}" data-record-id="${escapeHtml(record.id)}">
-        <div class="record-head">
-          <div class="record-identity">
-            <span class="record-index">ID / ${escapeHtml(record.account.slice(0, 2).toUpperCase() || '—')}</span>
+        <details class="record-details">
+          <summary class="record-summary">
             <h3>${escapeHtml(record.account || '未命名账号')}</h3>
-            <span class="status-pill ${incomplete ? 'is-warning' : 'is-ready'}"><i></i>${statusLabel}</span>
-          </div>
-          <div class="record-actions">
-            <button class="icon-button" type="button" data-action="toggle-password" data-record-id="${escapeHtml(record.id)}" aria-label="${state.revealed.has(record.id) ? '隐藏密码' : '显示密码'}">${state.revealed.has(record.id) ? '隐藏' : '显密'}</button>
-            <button class="icon-button is-danger" type="button" data-action="delete" data-record-id="${escapeHtml(record.id)}" aria-label="删除账号">删除</button>
-          </div>
-        </div>
+            <span class="record-chevron" aria-hidden="true">⌄</span>
+          </summary>
+          <div class="record-body">
+            <div class="record-head">
+              <div class="record-identity">
+                <span class="status-pill ${incomplete ? 'is-warning' : 'is-ready'}"><i></i>${statusLabel}</span>
+              </div>
+              <div class="record-actions">
+                <button class="icon-button" type="button" data-action="toggle-password" data-record-id="${escapeHtml(record.id)}" aria-label="${state.revealed.has(record.id) ? '隐藏密码' : '显示密码'}">${state.revealed.has(record.id) ? '隐藏' : '显密'}</button>
+                <button class="icon-button is-danger" type="button" data-action="delete" data-record-id="${escapeHtml(record.id)}" aria-label="删除账号">删除</button>
+              </div>
+            </div>
 
-        <div class="record-grid">
-          ${renderCopyField(record, 'account', '账号', record.account, { className: 'field-account' })}
-          ${renderCopyField(record, 'password', '密码', record.password, { sensitive: true, className: 'field-password' })}
-          ${renderCopyField(record, 'question1', '密保问题 01', record.questions[0])}
-          ${renderCopyField(record, 'question2', '密保问题 02', record.questions[1])}
-          ${renderCopyField(record, 'question3', '密保问题 03', record.questions[2])}
-          ${renderCopyField(record, 'birthDate', '出生日期', record.birthDate)}
-          ${renderCopyField(record, 'country', '国家', record.country)}
-          <div class="data-field field-phone">
-            <span class="field-label">手机号</span>
-            ${phoneMarkup}
-          </div>
-        </div>
+            <div class="record-grid">
+              ${renderCopyField(record, 'account', '账号', record.account, { className: 'field-account' })}
+              ${renderCopyField(record, 'password', '密码', record.password, { sensitive: true, className: 'field-password' })}
+              ${renderCopyField(record, 'question1', '密保问题 01', record.questions[0])}
+              ${renderCopyField(record, 'question2', '密保问题 02', record.questions[1])}
+              ${renderCopyField(record, 'question3', '密保问题 03', record.questions[2])}
+              ${renderCopyField(record, 'birthDate', '出生日期', record.birthDate)}
+              ${renderCopyField(record, 'country', '国家', record.country)}
+              <div class="data-field field-phone">
+                <span class="field-label">手机号</span>
+                ${phoneMarkup}
+              </div>
+              <div class="data-field field-remark">
+                <label class="field-label" for="remark-${escapeHtml(record.id)}">备注</label>
+                <input class="remark-input" id="remark-${escapeHtml(record.id)}" type="text" data-action="update-remark" data-record-id="${escapeHtml(record.id)}" value="${escapeHtml(record.remark)}" placeholder="点击填写" aria-label="编辑备注" />
+              </div>
+            </div>
 
-        <div class="code-strip">
-          <div class="code-copy">
-            <span class="field-label">短信验证码</span>
-            <div class="code-result">${codeStatusMarkup(record)}</div>
+            <div class="code-strip">
+              <div class="code-copy">
+                <span class="field-label">短信验证码</span>
+                <div class="code-result">${codeStatusMarkup(record)}</div>
+              </div>
+              <div class="code-meta">
+                ${linkMarkup}
+                ${linkCopyMarkup}
+                <button class="refresh-button" type="button" data-action="refresh-code" data-record-id="${escapeHtml(record.id)}" ${record.codeStatus === 'loading' ? 'disabled' : ''}>${record.codeStatus === 'loading' ? '读取中' : '刷新取码'}</button>
+                ${record.codeCheckedAt ? `<span class="checked-at">${escapeHtml(formatCheckedAt(record.codeCheckedAt))}</span>` : ''}
+              </div>
+            </div>
           </div>
-          <div class="code-meta">
-            ${linkMarkup}
-            ${linkCopyMarkup}
-            <button class="refresh-button" type="button" data-action="refresh-code" data-record-id="${escapeHtml(record.id)}" ${record.codeStatus === 'loading' ? 'disabled' : ''}>${record.codeStatus === 'loading' ? '读取中' : '刷新取码'}</button>
-            ${record.codeCheckedAt ? `<span class="checked-at">${escapeHtml(formatCheckedAt(record.codeCheckedAt))}</span>` : ''}
-          </div>
-        </div>
+        </details>
       </article>`;
   }
 
@@ -526,6 +541,7 @@
       record.phone,
       record.country,
       record.birthDate,
+      record.remark,
       ...(record.questions || []),
     ].join(' ').toLowerCase();
     const matchesQuery = !state.query || haystack.includes(state.query.toLowerCase());
@@ -802,6 +818,15 @@
     } else if (action === 'delete') {
       deleteRecord(recordId);
     }
+  });
+
+  document.addEventListener('input', (event) => {
+    const remarkInput = event.target.closest('[data-action="update-remark"]');
+    if (!remarkInput) return;
+    const record = state.records.find((item) => item.id === remarkInput.dataset.recordId);
+    if (!record) return;
+    record.remark = remarkInput.value;
+    saveRecords(state.records);
   });
 
   elements.confirmDialog.addEventListener('cancel', () => {

@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#171a17" />
     <meta name="description" content="本地 Apple ID 账号资料管理器" />
     <title>Vault / 本地账号档案柜</title>
-    <link rel="stylesheet" href="styles.css?v=compact" />
-    <script src="app.js?v=refresh-fix-2" defer></script>
+    <link rel="stylesheet" href="styles.css?v=collapse-remark" />
+    <script src="app.js?v=collapse-remark" defer></script>
   </head>
   <body>
     <div class="background-grid" aria-hidden="true"></div>
@@ -83,35 +83,39 @@
           </section>
 
           <section class="import-panel panel">
-            <div class="panel-heading">
-              <div>
-                <span class="section-number">01 / IMPORT</span>
-                <h3>批量导入</h3>
-              </div>
-              <span class="panel-status"><i></i>READY TO RECEIVE</span>
-            </div>
+            <details class="import-details">
+              <summary class="panel-heading">
+                <div>
+                  <span class="section-number">01 / IMPORT</span>
+                  <h3>批量导入</h3>
+                </div>
+                <span class="panel-status"><i></i>READY TO RECEIVE</span>
+                <span class="collapse-mark" aria-hidden="true">⌄</span>
+              </summary>
 
-            <label class="textarea-label" for="importInput">粘贴账号资料</label>
-            <textarea
-              id="importInput"
-              spellcheck="false"
-              placeholder="账号----密码----问题1----问题2----问题3----出生日期----国家
+              <label class="textarea-label" for="importInput">粘贴账号资料</label>
+              <textarea
+                id="importInput"
+                spellcheck="false"
+                placeholder="账号----密码----问题1----问题2----问题3----出生日期----国家
 手机号|取码链接"
-            ></textarea>
-            <div class="import-help">
-              <div class="format-notes">
-                <span><b>可识别</b> ---- / 连续空格 / Tab / 账号 - 密码</span>
-                <span><b>取码行</b> 手机号|http(s)://...</span>
+              ></textarea>
+              <div class="import-help">
+                <div class="format-notes">
+                  <span><b>可识别</b> ---- / 连续空格 / Tab / 账号 - 密码</span>
+                  <span><b>取码行</b> 手机号|http(s)://...</span>
+                  <span><b>备注</b> 展开账号卡后直接填写</span>
+                </div>
+                <button class="primary-button" id="parseButton" type="button">
+                  <span>解析并存入档案柜</span><b>↗</b>
+                </button>
               </div>
-              <button class="primary-button" id="parseButton" type="button">
-                <span>解析并存入档案柜</span><b>↗</b>
-              </button>
-            </div>
-            <div class="privacy-line">
-              <span class="privacy-lock">⌁</span>
-              <span>资料只会留在当前浏览器。取码链接需要允许 CORS，页面才能自动读取其中的文字。</span>
-            </div>
-            <div class="import-feedback" id="importFeedback" aria-live="polite"></div>
+              <div class="privacy-line">
+                <span class="privacy-lock">⌁</span>
+                <span>资料只会留在当前浏览器。取码链接需要允许 CORS，页面才能自动读取其中的文字。</span>
+              </div>
+              <div class="import-feedback" id="importFeedback" aria-live="polite"></div>
+            </details>
           </section>
 
           <section class="records-section">

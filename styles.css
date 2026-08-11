@@ -402,7 +402,8 @@ textarea:focus-visible {
 .panel-heading,
 .import-help,
 .code-strip,
-.record-head {
+.record-head,
+.record-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -451,6 +452,39 @@ textarea:focus-visible {
 .panel {
   padding: clamp(20px, 2.4vw, 30px);
   border-radius: var(--radius-xl);
+}
+
+.import-details > summary,
+.record-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.import-details > summary::-webkit-details-marker,
+.record-summary::-webkit-details-marker {
+  display: none;
+}
+
+.import-details > summary:focus-visible,
+.record-summary:focus-visible {
+  outline: 3px solid var(--acid-deep);
+  outline-offset: 4px;
+}
+
+.collapse-mark,
+.record-chevron {
+  flex-shrink: 0;
+  color: rgba(23, 27, 24, 0.45);
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 180ms ease, color 180ms ease;
+}
+
+details[open] > summary .collapse-mark,
+details[open] > summary .record-chevron {
+  color: var(--ink);
+  transform: rotate(180deg);
 }
 
 .panel-heading h3,
@@ -685,6 +719,28 @@ textarea:focus-visible {
   animation: card-in 420ms both;
 }
 
+.record-summary {
+  gap: 16px;
+  min-height: 58px;
+  padding: 14px 18px;
+}
+
+.record-summary h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: clamp(0.82rem, 1.4vw, 1.03rem);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-body {
+  border-top: 1px solid var(--paper-line);
+}
+
 .record-card.is-incomplete {
   border-color: rgba(233, 152, 96, 0.42);
 }
@@ -841,6 +897,33 @@ textarea:focus-visible {
 .field-value.is-empty {
   color: rgba(23, 27, 24, 0.29);
   cursor: default;
+}
+
+.remark-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  outline: 0;
+  overflow: hidden;
+  color: var(--ink);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 180ms ease;
+}
+
+.remark-input::placeholder {
+  color: rgba(23, 27, 24, 0.29);
+}
+
+.remark-input:focus {
+  border-bottom-color: var(--acid-deep);
 }
 
 .copy-hint,
