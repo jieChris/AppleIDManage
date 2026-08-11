@@ -7,5 +7,5 @@ CONTAINER=appleid-api
 "$DOCKER" exec --user 0 "$CONTAINER" /usr/local/bin/python /app/vault_api.py \
   --backup \
   --db /data/vault.db \
-  --key /run/secrets/vault.key \
+  --key /app/vault.key \
   --backup-root /backups
