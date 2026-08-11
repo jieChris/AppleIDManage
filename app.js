@@ -456,7 +456,8 @@
       return `<button class="code-status is-found" type="button" data-action="copy" data-record-id="${escapeHtml(record.id)}" data-field="verificationCode" aria-label="复制验证码">${escapeHtml(record.smsCode)} <span>复制</span></button>`;
     }
     if (status === 'blocked') {
-      const reason = record.codeError || '取码链接未开放 CORS，无法自动读取';
+      const isMixedContent = record.codeUrl.startsWith('http:') && location.protocol === 'https:';
+      const reason = isMixedContent ? getCodeFailureMessage(record.codeUrl) : (record.codeError || '取码链接未开放 CORS，无法自动读取');
       return `<span class="code-status is-blocked" title="${escapeHtml(reason)}">无法读取</span>`;
     }
     if (status === 'empty') return '<span class="code-status is-empty">无验证码</span>';
