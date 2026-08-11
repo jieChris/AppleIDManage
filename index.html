@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#171a17" />
     <meta name="description" content="共享 Apple ID 账号资料管理器" />
     <title>Vault / 共享账号档案柜</title>
-    <link rel="stylesheet" href="styles.css?v=server-vault-1" />
-    <script src="app.js?v=server-vault-1" defer></script>
+    <link rel="stylesheet" href="styles.css?v=server-vault-2" />
+    <script src="app.js?v=server-vault-3" defer></script>
   </head>
   <body>
     <div class="background-grid" aria-hidden="true"></div>
@@ -138,6 +138,19 @@
         </main>
       </div>
     </div>
+
+    <dialog class="auth-dialog" id="authDialog" aria-labelledby="authTitle">
+      <form class="auth-dialog-panel" id="authForm">
+        <span class="section-number">ACCESS CONTROL</span>
+        <h2 id="authTitle">进入共享档案柜</h2>
+        <p>请输入服务器门禁密码。页面不会弹出浏览器账号框，密码只用于当前页面访问共享库。</p>
+        <div class="auth-account">门禁账号 <strong>vault</strong></div>
+        <label class="auth-label" for="authPassword">门禁密码</label>
+        <input class="auth-input" id="authPassword" type="password" autocomplete="current-password" required />
+        <div class="auth-error" id="authError" role="alert" aria-live="polite"></div>
+        <button class="auth-submit" id="authSubmit" type="submit">验证并进入 <b>↗</b></button>
+      </form>
+    </dialog>
 
     <dialog class="confirm-dialog" id="confirmDialog" aria-labelledby="confirmTitle">
       <div class="confirm-dialog-panel">

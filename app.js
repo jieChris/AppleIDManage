@@ -421,7 +421,11 @@
       } catch {
         payload = null;
       }
-      if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
+      if (!response.ok) {
+        const error = new Error(payload?.error || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
       return payload;
     } finally {
       window.clearTimeout(timer);
@@ -474,8 +478,9 @@
 
   const legacyRecords = loadRecords();
   const state = {
-    records: legacyRecords,
+    records: [],
     legacyRecords,
+    authHeader: '',
     revision: 0,
     deleted: {},
     clearAt: '',
@@ -506,6 +511,11 @@
     confirmDialog: document.querySelector('#confirmDialog'),
     confirmTitle: document.querySelector('#confirmTitle'),
     confirmMessage: document.querySelector('#confirmMessage'),
+    authDialog: document.querySelector('#authDialog'),
+    authForm: document.querySelector('#authForm'),
+    authPassword: document.querySelector('#authPassword'),
+    authError: document.querySelector('#authError'),
+    authSubmit: document.querySelector('#authSubmit'),
     toast: document.querySelector('#toast'),
   };
 
@@ -536,12 +546,34 @@
       loading: '连接共享库…',
       syncing: '同步中…',
       ready: '已连接 · 共享库',
+      auth: '等待门禁登录',
       error: '同步失败 · 只读',
     };
     if (elements.syncStatus) elements.syncStatus.dataset.status = status;
     if (elements.syncStatusText) elements.syncStatusText.textContent = message || labels[status] || status;
-    if (elements.syncButton) elements.syncButton.disabled = status === 'loading' || status === 'syncing';
+    if (elements.syncButton) elements.syncButton.disabled = ['loading', 'syncing', 'auth'].includes(status);
     setWriteAvailability();
+  }
+
+  function getRequestHeaders(url, extra = {}) {
+    const headers = { ...extra };
+    if (!state.authHeader) return headers;
+    try {
+      if (new URL(url, window.location.href).origin !== window.location.origin) return headers;
+    } catch {
+      return headers;
+    }
+    return { Authorization: state.authHeader, ...headers };
+  }
+
+  function showAuthDialog(message = '') {
+    if (elements.authError) elements.authError.textContent = message;
+    if (!elements.authDialog) return;
+    if (!elements.authDialog.open) {
+      if (elements.authDialog.showModal) elements.authDialog.showModal();
+      else elements.authDialog.setAttribute('open', '');
+    }
+    window.setTimeout(() => elements.authPassword?.focus(), 0);
   }
 
   function applyServerState(payload) {
@@ -567,7 +599,10 @@
   async function requestVault(path, options = {}) {
     const url = getVaultApiUrl(path);
     if (!url) throw new Error('共享库地址无效');
-    return fetchJsonWithTimeout(url, options);
+    return fetchJsonWithTimeout(url, {
+      ...options,
+      headers: getRequestHeaders(url, options.headers || {}),
+    });
   }
 
   function syncSnapshot(records, deleted = state.deleted, clearAt = state.clearAt, options = {}) {
@@ -622,7 +657,7 @@
   }
 
   async function loadServerState(initial = false) {
-    const fallbackRecords = initial ? state.legacyRecords : state.records;
+    const fallbackRecords = initial ? [] : state.records;
     setSyncStatus('loading');
     try {
       const payload = await requestVault('state');
@@ -641,11 +676,54 @@
         notify('本机旧资料已迁移到共享库', 'success');
       }
     } catch (error) {
+      if (error?.status === 401) {
+        state.authHeader = '';
+        state.records = fallbackRecords;
+        setSyncStatus('auth');
+        render();
+        showAuthDialog('门禁密码不正确，请重试');
+        return;
+      }
       state.records = fallbackRecords;
       setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
       render();
       notify('共享库暂时不可用，已切换只读模式', 'warning');
     }
+  }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    const password = elements.authPassword?.value || '';
+    if (!password) {
+      if (elements.authError) elements.authError.textContent = '请输入门禁密码';
+      return;
+    }
+
+    let encoded;
+    try {
+      encoded = window.btoa(`vault:${password}`);
+    } catch {
+      if (elements.authError) elements.authError.textContent = '密码格式无法处理';
+      return;
+    }
+
+    state.authHeader = `Basic ${encoded}`;
+    if (elements.authSubmit) elements.authSubmit.disabled = true;
+    if (elements.authError) elements.authError.textContent = '验证中…';
+    await loadServerState(true);
+    if (state.syncStatus === 'ready') {
+      elements.authPassword.value = '';
+      elements.authError.textContent = '';
+      if (elements.authDialog?.close) elements.authDialog.close();
+      else elements.authDialog?.removeAttribute('open');
+    } else {
+      state.authHeader = '';
+      if (state.syncStatus !== 'auth') setSyncStatus('auth');
+      if (elements.authError?.textContent === '验证中…') {
+        elements.authError.textContent = '门禁验证失败，请重试';
+      }
+    }
+    if (elements.authSubmit) elements.authSubmit.disabled = false;
   }
 
   function getFieldValue(record, field) {
@@ -898,7 +976,11 @@
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = window.setTimeout(() => controller?.abort(), 8000);
     try {
-      const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
+      const response = await fetch(url, {
+        ...(controller ? { signal: controller.signal } : {}),
+        credentials: 'same-origin',
+        headers: getRequestHeaders(url),
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.text();
     } finally {
@@ -1034,6 +1116,8 @@
   elements.parseButton.addEventListener('click', handleImport);
   elements.clearAllButton.addEventListener('click', clearAll);
   elements.syncButton.addEventListener('click', () => loadServerState());
+  elements.authForm?.addEventListener('submit', handleAuthSubmit);
+  elements.authDialog?.addEventListener('cancel', (event) => event.preventDefault());
   elements.searchInput.addEventListener('input', (event) => {
     state.query = event.target.value.trim();
     render();
@@ -1097,6 +1181,6 @@
   });
 
   render();
-  setSyncStatus('loading');
-  loadServerState(true);
+  setSyncStatus('auth');
+  showAuthDialog();
 })();

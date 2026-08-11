@@ -1135,6 +1135,111 @@ details[open] > summary .record-chevron {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
+.auth-dialog {
+  width: min(430px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  color: var(--ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+.auth-dialog::backdrop {
+  background: rgba(8, 11, 9, 0.78);
+  backdrop-filter: blur(6px);
+}
+
+.auth-dialog-panel {
+  display: grid;
+  gap: 10px;
+  padding: 29px 30px 28px;
+  border: 1px solid rgba(216, 243, 106, 0.45);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.38);
+}
+
+.auth-dialog h2 {
+  margin: 4px 0 0;
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: -0.07em;
+}
+
+.auth-dialog p {
+  margin: 0 0 7px;
+  color: rgba(23, 27, 24, 0.58);
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+
+.auth-account {
+  padding: 10px 12px;
+  border: 1px solid rgba(23, 27, 24, 0.11);
+  border-radius: 8px;
+  color: rgba(23, 27, 24, 0.52);
+  font-family: var(--mono);
+  font-size: 0.63rem;
+}
+
+.auth-account strong {
+  margin-left: 6px;
+  color: var(--ink);
+}
+
+.auth-label {
+  margin-top: 4px;
+  color: rgba(23, 27, 24, 0.56);
+  font-family: var(--mono);
+  font-size: 0.61rem;
+}
+
+.auth-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(23, 27, 24, 0.2);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.55);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.auth-input:focus {
+  border-color: var(--acid-deep);
+  outline: 3px solid rgba(216, 243, 106, 0.38);
+  outline-offset: 1px;
+}
+
+.auth-error {
+  min-height: 18px;
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+}
+
+.auth-submit {
+  min-height: 42px;
+  border: 1px solid var(--acid-deep);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--acid);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+}
+
+.auth-submit:hover:not(:disabled) {
+  background: #e8fa91;
+}
+
+.auth-submit:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .confirm-dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 0;

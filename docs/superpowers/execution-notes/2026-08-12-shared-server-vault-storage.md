@@ -11,3 +11,7 @@ The Codex in-app browser retained the pre-rotation Basic Auth credential and its
 - Verified the public production path: unauthenticated API `401`, authenticated API `200`, authenticated page `200`, and the removed preview path `404`.
 - Ran the backup script; database, encryption key, and backup files are mode `0600`.
 - Confirmed the API container has no published host port and sample plaintext credentials are absent from the SQLite file.
+
+## Basic Auth Prompt Fix
+
+The original server-wide Basic Auth protected the HTML entrypoint. After the gate password was rotated, browsers with cached credentials repeatedly returned `ERR_INVALID_AUTH_CREDENTIALS` before the application could load. The fix keeps Basic Auth on `/api/vault/` and `/api/fetch-code` only, makes the static shell public, and adds a page-level password dialog that sends the Basic Auth header explicitly to same-origin protected requests. Wrong passwords now return to a retryable in-page error state without a native browser prompt.
