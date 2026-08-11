@@ -1,7 +1,10 @@
 import sqlite3
 import unittest
+import json
+import threading
+import urllib.request
 
-from vault_api import VaultError, VaultStore
+from vault_api import VaultError, VaultHandler, VaultServer, VaultStore
 
 
 def record(account="a@example.com", password="secret", updated_at="2026-08-12T00:00:00Z"):
@@ -73,6 +76,51 @@ class VaultStoreTests(unittest.TestCase):
 
         with self.assertRaisesRegex(VaultError, "校验失败"):
             store.get_state()
+
+
+class VaultApiTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.server = VaultServer(
+            ("127.0.0.1", 0),
+            VaultHandler,
+            VaultStore(f"{self.temp_dir.name}/vault.db", b"k" * 32),
+        )
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base_url = f"http://127.0.0.1:{self.server.server_port}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+        self.temp_dir.cleanup()
+
+    def request(self, method, path, payload=None):
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            self.base_url + path,
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json"} if data else {},
+        )
+        with urllib.request.urlopen(request) as response:
+            return response.status, json.loads(response.read())
+
+    def test_state_sync_and_clear_routes(self):
+        status, initial = self.request("GET", "/vault/state")
+        self.assertEqual(status, 200)
+        self.assertEqual(initial["revision"], 0)
+
+        status, synced = self.request("POST", "/vault/sync", {"records": [record()], "deleted": {}, "clearAt": ""})
+        self.assertEqual(status, 200)
+        self.assertEqual(synced["records"][0]["account"], "a@example.com")
+
+        status, cleared = self.request("POST", "/vault/clear")
+        self.assertEqual(status, 200)
+        self.assertEqual(cleared["records"], [])
 
 
 if __name__ == "__main__":
