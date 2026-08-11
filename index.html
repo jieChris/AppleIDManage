@@ -4,10 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#171a17" />
-    <meta name="description" content="本地 Apple ID 账号资料管理器" />
-    <title>Vault / 本地账号档案柜</title>
-    <link rel="stylesheet" href="styles.css?v=collapse-remark" />
-    <script src="app.js?v=collapse-remark" defer></script>
+    <meta name="description" content="共享 Apple ID 账号资料管理器" />
+    <title>Vault / 共享账号档案柜</title>
+    <link rel="stylesheet" href="styles.css?v=server-vault-1" />
+    <script src="app.js?v=server-vault-1" defer></script>
   </head>
   <body>
     <div class="background-grid" aria-hidden="true"></div>
@@ -21,7 +21,8 @@
           </span>
         </a>
         <div class="topbar-actions">
-          <span class="local-badge"><i></i> 只存本机</span>
+          <span class="local-badge sync-badge" id="syncStatus"><i></i><span id="syncStatusText">连接共享库…</span></span>
+          <button class="clear-button" id="syncButton" type="button">刷新同步</button>
           <button class="clear-button" id="clearAllButton" type="button">清空全部</button>
         </div>
       </header>
@@ -31,7 +32,7 @@
           <div class="sidebar-intro">
             <span class="eyebrow">ARCHIVE STATUS</span>
             <h1>你的账号，<br /><em>一眼可取。</em></h1>
-            <p>贴入原始资料，整理为一座只属于你的本地档案柜。</p>
+            <p>贴入原始资料，整理为一座受门禁保护的共享档案柜。</p>
           </div>
 
           <div class="stats-grid" aria-label="档案统计">
@@ -66,7 +67,7 @@
 
           <div class="sidebar-footnote">
             <span class="footnote-mark">✳</span>
-            <p>浏览器站点数据被清除后，保存在这里的资料也会随之消失。</p>
+            <p>资料由 Visa 服务器加密保存，所有通过门禁的设备共享同一份库。</p>
           </div>
         </aside>
 
@@ -112,7 +113,7 @@
               </div>
               <div class="privacy-line">
                 <span class="privacy-lock">⌁</span>
-                <span>资料只会留在当前浏览器。取码链接需要允许 CORS，页面才能自动读取其中的文字。</span>
+                <span>账号资料保存在受门禁保护的服务器加密库；刷新验证码时，仅将取码链接交给本站代理，目标内容不保存。</span>
               </div>
               <div class="import-feedback" id="importFeedback" aria-live="polite"></div>
             </details>

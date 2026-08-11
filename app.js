@@ -324,30 +324,108 @@
     }).format(date);
   }
 
-  function getCodeRequestUrls(url, pageProtocol = typeof location === 'undefined' ? 'https:' : location.protocol) {
+  function getCodeProxyUrl(url, pageHref = typeof location === 'undefined' ? '' : location.href) {
+    const source = asText(url);
+    if (!source || !pageHref) return '';
+    try {
+      const proxy = new URL('api/fetch-code', pageHref);
+      proxy.searchParams.set('url', source);
+      return proxy.href;
+    } catch {
+      return '';
+    }
+  }
+
+  function getCodeRequestUrls(
+    url,
+    pageProtocol = typeof location === 'undefined' ? 'https:' : location.protocol,
+    pageHref = typeof location === 'undefined' ? '' : location.href,
+  ) {
     const source = asText(url);
     try {
       const parsed = new URL(source);
+      if (!['http:', 'https:'].includes(parsed.protocol)) return [source];
+
+      const requestUrls = [];
+      const proxyUrl = getCodeProxyUrl(source, pageHref);
+      if (proxyUrl) requestUrls.push(proxyUrl);
+
       if (pageProtocol === 'https:' && parsed.protocol === 'http:') {
         parsed.protocol = 'https:';
-        return [parsed.href, source];
+        requestUrls.push(parsed.href);
       }
+      requestUrls.push(source);
+      return [...new Set(requestUrls)];
     } catch {
       return [source];
     }
-    return [source];
   }
 
   function getCodeFailureMessage(url, pageProtocol = typeof location === 'undefined' ? 'https:' : location.protocol) {
     try {
       const parsed = new URL(url);
       if (pageProtocol === 'https:' && parsed.protocol === 'http:') {
-        return '取码链接是 HTTP，HTTPS 页面无法自动读取';
+        return '取码链接是 HTTP，浏览器直读会被拦截，本站代理也未能读取';
       }
     } catch {
       return '取码链接格式无效';
     }
-    return '取码链接未开放 CORS，无法自动读取';
+    return '取码代理无法读取目标链接';
+  }
+
+  function getVaultApiUrl(path, pageHref = typeof location === 'undefined' ? '' : location.href) {
+    if (!pageHref) return '';
+    try {
+      return new URL(`api/vault/${asText(path).replace(/^\/+/, '')}`, pageHref).href;
+    } catch {
+      return '';
+    }
+  }
+
+  function normalizeServerState(payload) {
+    const records = Array.isArray(payload?.records)
+      ? payload.records.map(normalizeRecord).filter((record) => record?.account)
+      : [];
+    const deleted = {};
+    if (payload?.deleted && typeof payload.deleted === 'object') {
+      Object.entries(payload.deleted).forEach(([account, timestamp]) => {
+        if (account && timestamp) deleted[account] = clean(timestamp);
+      });
+    }
+    return {
+      revision: Number.isFinite(Number(payload?.revision)) ? Number(payload.revision) : 0,
+      records,
+      deleted,
+      clearAt: clean(payload?.clearAt),
+    };
+  }
+
+  async function fetchJsonWithTimeout(url, options = {}) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = window.setTimeout(() => controller?.abort(), 8000);
+    try {
+      const response = await fetch(url, {
+        ...options,
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+          ...(options.headers || {}),
+        },
+        signal: controller?.signal,
+      });
+      const raw = await response.text();
+      let payload = null;
+      try {
+        payload = raw ? JSON.parse(raw) : null;
+      } catch {
+        payload = null;
+      }
+      if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
+      return payload;
+    } finally {
+      window.clearTimeout(timer);
+    }
   }
 
   function runSelfCheck() {
@@ -366,9 +444,11 @@
     console.assert(extractSixDigitCode('时间 12:34:56，日期 2026-08-11') === '');
     console.assert(extractSixDigitCode('时间 123456') === '');
     console.assert(extractSixDigitCode('request id 1234567890') === '');
-    console.assert(getCodeRequestUrls('http://sms.test/code', 'https:')[0] === 'https://sms.test/code');
-    console.assert(getCodeFailureMessage('http://sms.test/code', 'https:').includes('HTTP'));
-    console.assert(getCodeFailureMessage('https://sms.test/code', 'https:').includes('CORS'));
+    const proxyRequests = getCodeRequestUrls('http://sms.test/code', 'https:', 'https://vault.test/appleid/');
+    console.assert(proxyRequests[0].startsWith('https://vault.test/appleid/api/fetch-code?url='));
+    console.assert(decodeURIComponent(proxyRequests[0].split('url=')[1]) === 'http://sms.test/code');
+    console.assert(getCodeFailureMessage('http://sms.test/code', 'https:').includes('代理'));
+    console.assert(getCodeFailureMessage('https://sms.test/code', 'https:').includes('代理'));
     console.assert(dash.records[0]?.remark === '');
     console.assert(normalizeRecord({ account: 'a@example.com', remark: '个人备注' }).remark === '个人备注');
     console.log('parser self-check: ok');
@@ -379,6 +459,8 @@
     parseAccountLine,
     parseContactLine,
     extractSixDigitCode,
+    getCodeProxyUrl,
+    getCodeRequestUrls,
     isIncomplete,
     loadRecords,
     saveRecords,
@@ -390,18 +472,30 @@
 
   if (typeof document === 'undefined') return;
 
+  const legacyRecords = loadRecords();
   const state = {
-    records: loadRecords(),
+    records: legacyRecords,
+    legacyRecords,
+    revision: 0,
+    deleted: {},
+    clearAt: '',
     filter: 'all',
     query: '',
     revealed: new Set(),
     toastTimer: null,
+    remarkTimers: new Map(),
+    syncQueue: Promise.resolve(),
+    syncStatus: 'loading',
+    canWrite: false,
   };
 
   const elements = {
     importInput: document.querySelector('#importInput'),
     parseButton: document.querySelector('#parseButton'),
     clearAllButton: document.querySelector('#clearAllButton'),
+    syncButton: document.querySelector('#syncButton'),
+    syncStatus: document.querySelector('#syncStatus'),
+    syncStatusText: document.querySelector('#syncStatusText'),
     searchInput: document.querySelector('#searchInput'),
     importFeedback: document.querySelector('#importFeedback'),
     recordsList: document.querySelector('#recordsList'),
@@ -424,6 +518,134 @@
     elements.toast.dataset.tone = tone;
     elements.toast.classList.add('is-visible');
     state.toastTimer = window.setTimeout(() => elements.toast.classList.remove('is-visible'), 2600);
+  }
+
+  function setWriteAvailability() {
+    const writable = state.canWrite;
+    if (elements.parseButton) elements.parseButton.disabled = !writable;
+    if (elements.clearAllButton) elements.clearAllButton.disabled = !writable;
+    document.querySelectorAll('[data-write]').forEach((control) => {
+      control.disabled = !writable;
+    });
+  }
+
+  function setSyncStatus(status, message) {
+    state.syncStatus = status;
+    state.canWrite = status === 'ready';
+    const labels = {
+      loading: '连接共享库…',
+      syncing: '同步中…',
+      ready: '已连接 · 共享库',
+      error: '同步失败 · 只读',
+    };
+    if (elements.syncStatus) elements.syncStatus.dataset.status = status;
+    if (elements.syncStatusText) elements.syncStatusText.textContent = message || labels[status] || status;
+    if (elements.syncButton) elements.syncButton.disabled = status === 'loading' || status === 'syncing';
+    setWriteAvailability();
+  }
+
+  function applyServerState(payload) {
+    const next = normalizeServerState(payload);
+    state.records = next.records;
+    state.revision = next.revision;
+    state.deleted = next.deleted;
+    state.clearAt = next.clearAt;
+  }
+
+  function touchRecord(record) {
+    const previous = Date.parse(record.updatedAt) || 0;
+    const timestamp = Math.max(Date.now(), previous + 1);
+    record.updatedAt = new Date(timestamp).toISOString();
+    return record.updatedAt;
+  }
+
+  function getSyncErrorMessage(error) {
+    if (error?.name === 'AbortError') return '共享库请求超时';
+    return error?.message || '共享库暂时无法连接';
+  }
+
+  async function requestVault(path, options = {}) {
+    const url = getVaultApiUrl(path);
+    if (!url) throw new Error('共享库地址无效');
+    return fetchJsonWithTimeout(url, options);
+  }
+
+  function syncSnapshot(records, deleted = state.deleted, clearAt = state.clearAt, options = {}) {
+    if (!state.canWrite) return Promise.reject(new Error('共享库不可用，当前为只读状态'));
+    const { renderResult = true, migrate = false } = options;
+    const snapshot = {
+      records: records.map(normalizeRecord).filter((record) => record?.account),
+      deleted: { ...deleted },
+      clearAt,
+      migrate,
+    };
+    const task = state.syncQueue.then(async () => {
+      if (!state.canWrite) throw new Error('共享库不可用，当前为只读状态');
+      setSyncStatus('syncing');
+      try {
+        const payload = await requestVault('sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(snapshot),
+        });
+        applyServerState(payload);
+        setSyncStatus('ready');
+        if (renderResult) render();
+        return payload;
+      } catch (error) {
+        setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
+        throw error;
+      }
+    });
+    state.syncQueue = task.catch(() => {});
+    return task;
+  }
+
+  function clearServerState() {
+    if (!state.canWrite) return Promise.reject(new Error('共享库不可用，当前为只读状态'));
+    const task = state.syncQueue.then(async () => {
+      if (!state.canWrite) throw new Error('共享库不可用，当前为只读状态');
+      setSyncStatus('syncing');
+      try {
+        const payload = await requestVault('clear', { method: 'POST' });
+        applyServerState(payload);
+        setSyncStatus('ready');
+        render();
+        return payload;
+      } catch (error) {
+        setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
+        throw error;
+      }
+    });
+    state.syncQueue = task.catch(() => {});
+    return task;
+  }
+
+  async function loadServerState(initial = false) {
+    const fallbackRecords = initial ? state.legacyRecords : state.records;
+    setSyncStatus('loading');
+    try {
+      const payload = await requestVault('state');
+      applyServerState(payload);
+      setSyncStatus('ready');
+      render();
+
+      if (state.legacyRecords.length) {
+        await syncSnapshot(state.legacyRecords, state.deleted, state.clearAt, { migrate: true });
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          // The server copy is already safe if browser storage cannot be cleared.
+        }
+        state.legacyRecords = [];
+        notify('本机旧资料已迁移到共享库', 'success');
+      }
+    } catch (error) {
+      state.records = fallbackRecords;
+      setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
+      render();
+      notify('共享库暂时不可用，已切换只读模式', 'warning');
+    }
   }
 
   function getFieldValue(record, field) {
@@ -496,7 +718,7 @@
               </div>
               <div class="record-actions">
                 <button class="icon-button" type="button" data-action="toggle-password" data-record-id="${escapeHtml(record.id)}" aria-label="${state.revealed.has(record.id) ? '隐藏密码' : '显示密码'}">${state.revealed.has(record.id) ? '隐藏' : '显密'}</button>
-                <button class="icon-button is-danger" type="button" data-action="delete" data-record-id="${escapeHtml(record.id)}" aria-label="删除账号">删除</button>
+                <button class="icon-button is-danger" type="button" data-action="delete" data-record-id="${escapeHtml(record.id)}" data-write aria-label="删除账号" ${state.canWrite ? '' : 'disabled'}>删除</button>
               </div>
             </div>
 
@@ -514,7 +736,7 @@
               </div>
               <div class="data-field field-remark">
                 <label class="field-label" for="remark-${escapeHtml(record.id)}">备注</label>
-                <input class="remark-input" id="remark-${escapeHtml(record.id)}" type="text" data-action="update-remark" data-record-id="${escapeHtml(record.id)}" value="${escapeHtml(record.remark)}" placeholder="点击填写" aria-label="编辑备注" />
+                <input class="remark-input" id="remark-${escapeHtml(record.id)}" type="text" data-action="update-remark" data-record-id="${escapeHtml(record.id)}" value="${escapeHtml(record.remark)}" placeholder="点击填写" aria-label="编辑备注" ${state.canWrite ? '' : 'disabled'} />
               </div>
             </div>
 
@@ -526,7 +748,7 @@
               <div class="code-meta">
                 ${linkMarkup}
                 ${linkCopyMarkup}
-                <button class="refresh-button" type="button" data-action="refresh-code" data-record-id="${escapeHtml(record.id)}" ${record.codeStatus === 'loading' ? 'disabled' : ''}>${record.codeStatus === 'loading' ? '读取中' : '刷新取码'}</button>
+                <button class="refresh-button" type="button" data-action="refresh-code" data-record-id="${escapeHtml(record.id)}" data-write ${record.codeStatus === 'loading' || !state.canWrite ? 'disabled' : ''}>${record.codeStatus === 'loading' ? '读取中' : '刷新取码'}</button>
                 ${record.codeCheckedAt ? `<span class="checked-at">${escapeHtml(formatCheckedAt(record.codeCheckedAt))}</span>` : ''}
               </div>
             </div>
@@ -597,7 +819,7 @@
     if (result) result.innerHTML = codeStatusMarkup(record);
     const refreshButton = card.querySelector('[data-action="refresh-code"]');
     if (refreshButton) {
-      refreshButton.disabled = record.codeStatus === 'loading';
+      refreshButton.disabled = record.codeStatus === 'loading' || !state.canWrite;
       refreshButton.textContent = record.codeStatus === 'loading' ? '读取中' : '刷新取码';
     }
     const meta = card.querySelector('.code-meta');
@@ -690,11 +912,14 @@
       notify('这条记录没有取码链接', 'warning');
       return;
     }
+    if (!state.canWrite) {
+      notify('共享库不可用，暂时不能刷新验证码', 'warning');
+      return;
+    }
 
     record.codeStatus = 'loading';
     record.codeError = '';
     record.codeCheckedAt = new Date().toISOString();
-    saveRecords(state.records);
     updateCodeUI(record);
 
     try {
@@ -721,11 +946,21 @@
       notify(`${record.codeError}，仍可点击链接查看`, 'warning');
     }
     record.codeCheckedAt = new Date().toISOString();
-    saveRecords(state.records);
     updateCodeUI(record);
+    touchRecord(record);
+    try {
+      await syncSnapshot(state.records, state.deleted, state.clearAt, { renderResult: false });
+      updateCodeUI(state.records.find((item) => item.id === id) || record);
+    } catch {
+      updateCodeUI(record);
+    }
   }
 
   function handleImport() {
+    if (!state.canWrite) {
+      notify('共享库不可用，当前为只读模式', 'warning');
+      return;
+    }
     const text = elements.importInput.value.trim();
     if (!text) {
       notify('先粘贴一段账号资料', 'warning');
@@ -741,26 +976,36 @@
     }
 
     const merged = mergeRecords(state.records, result.records);
-    state.records = merged.records;
-    saveRecords(state.records);
     setFeedback(result, merged.duplicateCount);
-    elements.importInput.value = '';
-    render();
-    notify(`已保存 ${result.records.length} 条账号资料`, 'success');
+    syncSnapshot(merged.records, state.deleted, state.clearAt)
+      .then(() => {
+        elements.importInput.value = '';
+        notify(`已保存 ${result.records.length} 条账号资料`, 'success');
 
-    const importedAccounts = new Set(result.records.filter((record) => record.codeUrl).map((record) => record.account));
-    state.records.filter((record) => importedAccounts.has(record.account)).forEach((record) => refreshCode(record.id));
+        const importedAccounts = new Set(result.records.filter((record) => record.codeUrl).map((record) => record.account));
+        state.records.filter((record) => importedAccounts.has(record.account)).forEach((record) => refreshCode(record.id));
+      })
+      .catch(() => {
+        notify('服务器未确认保存，资料仍留在输入框中', 'warning');
+      });
   }
 
   function deleteRecord(id) {
     const record = state.records.find((item) => item.id === id);
     if (!record) return;
     requestConfirmation(`确定删除账号“${record.account}”吗？`, () => {
-      state.records = state.records.filter((item) => item.id !== id);
-      state.revealed.delete(id);
-      saveRecords(state.records);
-      render();
-      notify('账号已删除', 'success');
+      if (!state.canWrite) {
+        notify('共享库不可用，当前为只读模式', 'warning');
+        return;
+      }
+      const nextRecords = state.records.filter((item) => item.id !== id);
+      const nextDeleted = { ...state.deleted, [record.account]: new Date().toISOString() };
+      syncSnapshot(nextRecords, nextDeleted, state.clearAt)
+        .then(() => {
+          state.revealed.delete(id);
+          notify('账号已删除', 'success');
+        })
+        .catch(() => notify('服务器未确认删除，资料未改变', 'warning'));
     }, '删除这条档案？');
   }
 
@@ -770,16 +1015,25 @@
       return;
     }
     requestConfirmation('确定清空全部账号资料吗？此操作不可恢复。', () => {
-      state.records = [];
-      state.revealed.clear();
-      saveRecords(state.records);
-      render();
-      notify('全部账号资料已清空', 'success');
+      if (!state.canWrite) {
+        notify('共享库不可用，当前为只读模式', 'warning');
+        return;
+      }
+      clearServerState()
+        .then(() => {
+          state.revealed.clear();
+          notify('全部账号资料已清空', 'success');
+        })
+        .catch((error) => {
+          setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
+          notify('服务器未确认清空，资料未改变', 'warning');
+        });
     }, '清空全部档案？');
   }
 
   elements.parseButton.addEventListener('click', handleImport);
   elements.clearAllButton.addEventListener('click', clearAll);
+  elements.syncButton.addEventListener('click', () => loadServerState());
   elements.searchInput.addEventListener('input', (event) => {
     state.query = event.target.value.trim();
     render();
@@ -825,8 +1079,17 @@
     if (!remarkInput) return;
     const record = state.records.find((item) => item.id === remarkInput.dataset.recordId);
     if (!record) return;
+    if (!state.canWrite) {
+      notify('共享库不可用，备注暂时不能保存', 'warning');
+      return;
+    }
     record.remark = remarkInput.value;
-    saveRecords(state.records);
+    touchRecord(record);
+    window.clearTimeout(state.remarkTimers.get(record.id));
+    state.remarkTimers.set(record.id, window.setTimeout(() => {
+      syncSnapshot(state.records, state.deleted, state.clearAt, { renderResult: false })
+        .catch(() => notify('服务器未确认备注保存，已切换只读模式', 'warning'));
+    }, 350));
   });
 
   elements.confirmDialog.addEventListener('cancel', () => {
@@ -834,4 +1097,6 @@
   });
 
   render();
+  setSyncStatus('loading');
+  loadServerState(true);
 })();

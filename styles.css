@@ -185,6 +185,16 @@ textarea:focus-visible {
   letter-spacing: 0.08em;
 }
 
+.sync-badge[data-status="error"] {
+  color: var(--orange);
+}
+
+.sync-badge[data-status="syncing"] i,
+.sync-badge[data-status="loading"] i {
+  background: var(--orange);
+  box-shadow: 0 0 0 4px rgba(233, 152, 96, 0.1), 0 0 18px var(--orange);
+}
+
 .local-badge i,
 .panel-status i {
   display: inline-block;
@@ -214,6 +224,11 @@ textarea:focus-visible {
 .clear-button:hover,
 .clear-button:focus-visible {
   color: var(--orange);
+}
+
+.clear-button:disabled {
+  color: rgba(255, 255, 255, 0.28);
+  cursor: wait;
 }
 
 .app-layout {
