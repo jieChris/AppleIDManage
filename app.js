@@ -3,6 +3,7 @@
 
   const STORAGE_KEY = 'apple-id-vault-records';
   const AUTH_STORAGE_KEY = 'apple-id-vault-auth';
+  const REQUEST_TIMEOUT_MS = 11000;
   const VALID_CODE_STATUSES = new Set(['idle', 'loading', 'found', 'empty', 'blocked']);
   const CORE_FIELDS = ['account', 'password', 'birthDate', 'country'];
   const CODE_LABEL_RE = /(?:验证码|校验码|动态码|安全码|短信码|一次性密码|otp\b|one[-\s]?time(?:\s+password)?|verification(?:\s+code)?|security\s+code|passcode|\bcode\b)/iu;
@@ -13,6 +14,26 @@
 
   function clean(value) {
     return asText(value).trim().replace(/\s+/g, ' ');
+  }
+
+  function shouldRetryVaultRequest(error, attempt) {
+    const status = Number(error?.status || 0);
+    return attempt < 1 && (!status || status >= 500);
+  }
+
+  function isVaultWritable(status, authHeader, hasLoadedState) {
+    return Boolean(authHeader) && hasLoadedState && ['ready', 'error'].includes(status);
+  }
+
+  function canQueueVaultWrite(status, authHeader, hasLoadedState) {
+    return Boolean(authHeader) && hasLoadedState && ['ready', 'syncing', 'error'].includes(status);
+  }
+
+  function getVaultWriteUnavailableMessage(status) {
+    if (status === 'auth') return '请先完成门禁验证';
+    if (status === 'loading' || status === 'syncing') return '共享库正在同步，请稍后重试';
+    if (status === 'error') return '共享库连接波动，请点击刷新同步';
+    return '共享库暂未连接，请点击刷新同步';
   }
 
   function makeId() {
@@ -442,7 +463,7 @@
 
   async function fetchJsonWithTimeout(url, options = {}) {
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = window.setTimeout(() => controller?.abort(), 8000);
+    const timer = window.setTimeout(() => controller?.abort(), REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(url, {
         ...options,
@@ -507,6 +528,19 @@
     }]);
     console.assert(exported === 'a@example.com----secret----Q1----Q2----Q3----1984/2/25----美国\n+18178668072|https://example.com/code\n备注|长期使用');
     console.assert(parseImport(exported).records[0]?.remark === '长期使用');
+    console.assert(shouldRetryVaultRequest(new Error('timeout'), 0) === true);
+    console.assert(shouldRetryVaultRequest({ status: 500 }, 0) === true);
+    console.assert(shouldRetryVaultRequest({ status: 401 }, 0) === false);
+    console.assert(shouldRetryVaultRequest({ status: 400 }, 0) === false);
+    console.assert(isVaultWritable('ready', 'Basic test', true) === true);
+    console.assert(isVaultWritable('error', 'Basic test', true) === true);
+    console.assert(isVaultWritable('error', 'Basic test', false) === false);
+    console.assert(isVaultWritable('error', '') === false);
+    console.assert(isVaultWritable('syncing', 'Basic test', true) === false);
+    console.assert(canQueueVaultWrite('ready', 'Basic test', true) === true);
+    console.assert(canQueueVaultWrite('syncing', 'Basic test', true) === true);
+    console.assert(canQueueVaultWrite('error', 'Basic test', true) === true);
+    console.assert(canQueueVaultWrite('error', 'Basic test', false) === false);
     console.log('parser self-check: ok');
   }
 
@@ -547,6 +581,7 @@
     revision: 0,
     deleted: {},
     clearAt: '',
+    serverStateLoaded: false,
     filter: 'all',
     query: '',
     revealed: new Set(),
@@ -618,13 +653,13 @@
 
   function setSyncStatus(status, message) {
     state.syncStatus = status;
-    state.canWrite = status === 'ready';
+    state.canWrite = isVaultWritable(status, state.authHeader, state.serverStateLoaded);
     const labels = {
       loading: '连接共享库…',
       syncing: '同步中…',
       ready: '已连接 · 共享库',
       auth: '等待门禁登录',
-      error: '同步失败 · 只读',
+      error: '连接波动 · 可重试',
     };
     if (elements.syncStatus) elements.syncStatus.dataset.status = status;
     if (elements.syncStatusText) elements.syncStatusText.textContent = message || labels[status] || status;
@@ -653,12 +688,21 @@
     window.setTimeout(() => elements.authPassword?.focus(), 0);
   }
 
+  function requireVaultAuthentication(message, fallbackRecords = state.records) {
+    setAuthHeader('');
+    state.records = fallbackRecords;
+    setSyncStatus('auth');
+    render();
+    showAuthDialog(message);
+  }
+
   function applyServerState(payload) {
     const next = normalizeServerState(payload);
     state.records = next.records;
     state.revision = next.revision;
     state.deleted = next.deleted;
     state.clearAt = next.clearAt;
+    state.serverStateLoaded = true;
   }
 
   function touchRecord(record) {
@@ -676,14 +720,25 @@
   async function requestVault(path, options = {}) {
     const url = getVaultApiUrl(path);
     if (!url) throw new Error('共享库地址无效');
-    return fetchJsonWithTimeout(url, {
-      ...options,
-      headers: getRequestHeaders(url, options.headers || {}),
-    });
+    const method = asText(options.method || 'GET').toUpperCase();
+    const canRetry = method === 'GET';
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await fetchJsonWithTimeout(url, {
+          ...options,
+          headers: getRequestHeaders(url, options.headers || {}),
+        });
+      } catch (error) {
+        if (!canRetry || !shouldRetryVaultRequest(error, attempt)) throw error;
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+      }
+    }
   }
 
   function syncSnapshot(records, deleted = state.deleted, clearAt = state.clearAt, options = {}) {
-    if (!state.canWrite && state.syncStatus !== 'syncing') return Promise.reject(new Error('共享库不可用，当前为只读状态'));
+    if (!canQueueVaultWrite(state.syncStatus, state.authHeader, state.serverStateLoaded)) {
+      return Promise.reject(new Error(getVaultWriteUnavailableMessage(state.syncStatus)));
+    }
     const { renderResult = true, migrate = false } = options;
     const snapshot = {
       records: records.map(normalizeRecord).filter((record) => record?.account),
@@ -692,7 +747,7 @@
       migrate,
     };
     const task = state.syncQueue.then(async () => {
-      if (!state.canWrite && state.syncStatus !== 'syncing') throw new Error('共享库不可用，当前为只读状态');
+      if (!state.authHeader || !state.serverStateLoaded) throw new Error(getVaultWriteUnavailableMessage(state.syncStatus));
       setSyncStatus('syncing');
       try {
         const payload = await requestVault('sync', {
@@ -705,7 +760,8 @@
         if (renderResult) render();
         return payload;
       } catch (error) {
-        setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
+        if (error?.status === 401) requireVaultAuthentication('门禁已失效，请重新验证');
+        else setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
         throw error;
       }
     });
@@ -714,9 +770,11 @@
   }
 
   function clearServerState() {
-    if (!state.canWrite) return Promise.reject(new Error('共享库不可用，当前为只读状态'));
+    if (!canQueueVaultWrite(state.syncStatus, state.authHeader, state.serverStateLoaded)) {
+      return Promise.reject(new Error(getVaultWriteUnavailableMessage(state.syncStatus)));
+    }
     const task = state.syncQueue.then(async () => {
-      if (!state.canWrite) throw new Error('共享库不可用，当前为只读状态');
+      if (!state.authHeader || !state.serverStateLoaded) throw new Error(getVaultWriteUnavailableMessage(state.syncStatus));
       setSyncStatus('syncing');
       try {
         const payload = await requestVault('clear', { method: 'POST' });
@@ -725,7 +783,8 @@
         render();
         return payload;
       } catch (error) {
-        setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
+        if (error?.status === 401) requireVaultAuthentication('门禁已失效，请重新验证');
+        else setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
         throw error;
       }
     });
@@ -754,17 +813,13 @@
       }
     } catch (error) {
       if (error?.status === 401) {
-        setAuthHeader('');
-        state.records = fallbackRecords;
-        setSyncStatus('auth');
-        render();
-        showAuthDialog('门禁密码不正确，请重试');
+        requireVaultAuthentication('门禁密码不正确，请重试', fallbackRecords);
         return;
       }
       state.records = fallbackRecords;
       setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
       render();
-      notify('共享库暂时不可用，已切换只读模式', 'warning');
+      notify('共享库连接波动，可点击刷新同步重试', 'warning');
     }
   }
 
@@ -1051,7 +1106,7 @@
 
   async function fetchTextWithTimeout(url) {
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = window.setTimeout(() => controller?.abort(), 8000);
+    const timer = window.setTimeout(() => controller?.abort(), REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(url, {
         ...(controller ? { signal: controller.signal } : {}),
@@ -1071,8 +1126,8 @@
       notify('这条记录没有取码链接', 'warning');
       return;
     }
-    if (!state.canWrite) {
-      notify('共享库不可用，暂时不能刷新验证码', 'warning');
+    if (!canQueueVaultWrite(state.syncStatus, state.authHeader, state.serverStateLoaded)) {
+      notify(`${getVaultWriteUnavailableMessage(state.syncStatus)}，暂时不能刷新验证码`, 'warning');
       return;
     }
 
@@ -1116,8 +1171,8 @@
   }
 
   function handleImport() {
-    if (!state.canWrite) {
-      notify('共享库不可用，当前为只读模式', 'warning');
+    if (!canQueueVaultWrite(state.syncStatus, state.authHeader, state.serverStateLoaded)) {
+      notify(getVaultWriteUnavailableMessage(state.syncStatus), 'warning');
       return;
     }
     const text = elements.importInput.value.trim();
@@ -1172,8 +1227,8 @@
     const record = state.records.find((item) => item.id === id);
     if (!record) return;
     requestConfirmation(`确定删除账号“${record.account}”吗？`, () => {
-      if (!state.canWrite) {
-        notify('共享库不可用，当前为只读模式', 'warning');
+      if (!canQueueVaultWrite(state.syncStatus, state.authHeader, state.serverStateLoaded)) {
+        notify(getVaultWriteUnavailableMessage(state.syncStatus), 'warning');
         return;
       }
       const nextRecords = state.records.filter((item) => item.id !== id);
@@ -1193,8 +1248,8 @@
       return;
     }
     requestConfirmation('确定清空全部账号资料吗？此操作不可恢复。', () => {
-      if (!state.canWrite) {
-        notify('共享库不可用，当前为只读模式', 'warning');
+      if (!canQueueVaultWrite(state.syncStatus, state.authHeader, state.serverStateLoaded)) {
+        notify(getVaultWriteUnavailableMessage(state.syncStatus), 'warning');
         return;
       }
       clearServerState()
@@ -1203,7 +1258,7 @@
           notify('全部账号资料已清空', 'success');
         })
         .catch((error) => {
-          setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
+          if (state.syncStatus !== 'auth') setSyncStatus('error', `同步失败 · ${getSyncErrorMessage(error)}`);
           notify('服务器未确认清空，资料未改变', 'warning');
         });
     }, '清空全部档案？');
@@ -1260,8 +1315,8 @@
     if (!remarkInput) return;
     const record = state.records.find((item) => item.id === remarkInput.dataset.recordId);
     if (!record) return;
-    if (!state.canWrite && state.syncStatus !== 'syncing') {
-      notify('共享库不可用，备注暂时不能保存', 'warning');
+    if (!canQueueVaultWrite(state.syncStatus, state.authHeader, state.serverStateLoaded)) {
+      notify(`${getVaultWriteUnavailableMessage(state.syncStatus)}，备注暂不保存`, 'warning');
       return;
     }
     record.remark = remarkInput.value;
@@ -1269,7 +1324,7 @@
     window.clearTimeout(state.remarkTimers.get(record.id));
     state.remarkTimers.set(record.id, window.setTimeout(() => {
       syncSnapshot(state.records, state.deleted, state.clearAt, { renderResult: false })
-        .catch(() => notify('服务器未确认备注保存，已切换只读模式', 'warning'));
+        .catch(() => notify('服务器未确认备注保存，可点击刷新同步重试', 'warning'));
     }, 350));
   });
 
