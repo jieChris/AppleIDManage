@@ -96,6 +96,17 @@ def clean(value: object, limit: int = 10000) -> str:
     return " ".join(text(value, limit).strip().split())
 
 
+def normalize_code_url(value: object) -> str:
+    source = clean(value, 4096)
+    if not source:
+        return ""
+    try:
+        target = urlsplit(source)
+    except ValueError:
+        return ""
+    return source if target.scheme in {"http", "https"} and target.hostname else ""
+
+
 def normalize_record(raw: object, fallback_time: str | None = None) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -126,7 +137,7 @@ def normalize_record(raw: object, fallback_time: str | None = None) -> dict | No
         "country": clean(raw.get("country"), 160),
         "remark": clean(raw.get("remark"), 2000),
         "phone": clean(raw.get("phone"), 80),
-        "codeUrl": clean(raw.get("codeUrl"), 4096),
+        "codeUrl": normalize_code_url(raw.get("codeUrl")),
         "smsCode": sms_code,
         "codeStatus": status,
         "codeError": clean(raw.get("codeError"), 500),

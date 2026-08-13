@@ -199,6 +199,13 @@ class VaultStoreTests(unittest.TestCase):
         self.assertEqual(normalized["groupOrder"], 0)
         self.assertFalse(normalized["isPrimary"])
 
+    def test_non_http_code_url_is_not_persisted(self):
+        store = self.make_store()
+
+        state = store.sync([{**record(), "codeUrl": "javascript:alert(1)"}], {}, "")
+
+        self.assertEqual(state["records"][0]["codeUrl"], "")
+
 
 class VaultApiTests(unittest.TestCase):
     def setUp(self):

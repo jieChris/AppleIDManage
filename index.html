@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#171a17" />
     <meta name="description" content="共享 Apple ID 账号资料管理器" />
     <title>Vault / 共享账号档案柜</title>
-    <link rel="stylesheet" href="styles.css?v=server-vault-2" />
-    <script src="app.js?v=server-vault-9" defer></script>
+    <link rel="stylesheet" href="styles.css?v=server-vault-3" />
+    <script src="app.js?v=server-vault-11" defer></script>
   </head>
   <body>
     <div class="background-grid" aria-hidden="true"></div>
@@ -43,12 +43,12 @@
               <small>RECORDS</small>
             </div>
             <div class="stat-card">
-              <span>资料完整</span>
+              <span>已完善</span>
               <strong id="completeCount">0</strong>
               <small>READY</small>
             </div>
             <div class="stat-card stat-card-warn">
-              <span>待检查</span>
+              <span>未完善</span>
               <strong id="incompleteCount">0</strong>
               <small>REVIEW</small>
             </div>
@@ -61,7 +61,11 @@
               <span class="filter-arrow">→</span>
             </button>
             <button class="filter-button" type="button" data-filter="incomplete">
-              <span class="filter-dot is-warn"></span>待检查
+              <span class="filter-dot is-warn"></span>未完善
+              <span class="filter-arrow">→</span>
+            </button>
+            <button class="filter-button" type="button" data-filter="complete">
+              <span class="filter-dot is-ready"></span>已完善
               <span class="filter-arrow">→</span>
             </button>
           </nav>
@@ -127,11 +131,14 @@
                 <span class="section-number">02 / ARCHIVE</span>
                 <h3>已保存的账号</h3>
               </div>
-              <label class="search-box" for="searchInput">
-                <span aria-hidden="true">⌕</span>
-                <input id="searchInput" type="search" placeholder="搜索账号、手机号、国家…" autocomplete="off" />
-                <kbd>/</kbd>
-              </label>
+              <div class="archive-tools">
+                <button class="create-group-button" id="createGroupButton" type="button" data-write>＋ 新建分组</button>
+                <label class="search-box" for="searchInput">
+                  <span aria-hidden="true">⌕</span>
+                  <input id="searchInput" type="search" placeholder="搜索账号、副邮箱、分组…" autocomplete="off" />
+                  <kbd>/</kbd>
+                </label>
+              </div>
             </div>
 
             <div class="records-list" id="recordsList"></div>
@@ -164,6 +171,21 @@
           <button class="confirm-primary" type="button" data-confirm="accept">确认继续</button>
         </div>
       </div>
+    </dialog>
+
+    <dialog class="group-dialog" id="groupDialog" aria-labelledby="groupDialogTitle">
+      <form class="group-dialog-panel" id="groupForm">
+        <span class="section-number">FOLDER SETTINGS</span>
+        <h2 id="groupDialogTitle">新建分组</h2>
+        <p>每个分组最多放 6 个账号。</p>
+        <label class="auth-label" for="groupNameInput">分组名称</label>
+        <input class="auth-input" id="groupNameInput" type="text" maxlength="80" autocomplete="off" required />
+        <div class="auth-error" id="groupError" role="alert" aria-live="polite"></div>
+        <div class="group-dialog-actions">
+          <button type="button" id="cancelGroupButton">取消</button>
+          <button class="auth-submit" type="submit">保存分组 <b>↗</b></button>
+        </div>
+      </form>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

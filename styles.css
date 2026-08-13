@@ -56,6 +56,7 @@ body::before {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -76,6 +77,7 @@ button:disabled {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
   outline: 3px solid var(--acid);
   outline-offset: 3px;
@@ -373,6 +375,10 @@ textarea:focus-visible {
 
 .filter-dot.is-warn {
   border-color: var(--orange);
+}
+
+.filter-dot.is-ready {
+  border-color: var(--acid-deep);
 }
 
 .filter-arrow {
@@ -678,11 +684,40 @@ details[open] > summary .record-chevron {
   margin-bottom: 16px;
 }
 
+.archive-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  min-width: min(480px, 62%);
+}
+
+.create-group-button {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(216, 243, 106, 0.45);
+  border-radius: 7px;
+  color: var(--acid);
+  background: rgba(216, 243, 106, 0.07);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+}
+
+.create-group-button:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--acid);
+}
+
+.create-group-button:disabled {
+  opacity: 0.38;
+}
+
 .search-box {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: min(310px, 48%);
+  width: min(310px, 100%);
   padding: 0 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.26);
   color: rgba(255, 255, 255, 0.52);
@@ -724,20 +759,129 @@ details[open] > summary .record-chevron {
 
 .records-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+}
+
+.folder-group {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.folder-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 46px;
+  padding: 8px 12px;
+  color: var(--white);
+  cursor: pointer;
+  list-style: none;
+}
+
+.folder-summary::-webkit-details-marker {
+  display: none;
+}
+
+.folder-summary:focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: -2px;
+}
+
+.folder-title,
+.folder-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.folder-title {
+  gap: 8px;
+}
+
+.folder-icon {
+  color: var(--acid);
+  font-size: 0.8rem;
+  transform: skewX(-10deg);
+}
+
+.folder-title strong {
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-title > span:not(.folder-icon),
+.folder-title small {
+  color: rgba(255, 255, 255, 0.43);
+  font-family: var(--mono);
+  font-size: 0.54rem;
+  font-weight: 400;
+}
+
+.folder-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-actions {
+  flex-shrink: 0;
+  gap: 3px;
+}
+
+.folder-actions button {
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 5px;
+  color: rgba(255, 255, 255, 0.45);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 0.52rem;
+}
+
+.folder-actions button:hover:not(:disabled) {
+  color: var(--acid);
+  background: rgba(216, 243, 106, 0.08);
+}
+
+.folder-records {
+  display: grid;
+  gap: 5px;
+  padding: 0 7px 7px;
+}
+
+.folder-empty {
+  padding: 17px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.34);
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.56rem;
 }
 
 .record-card {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 16px;
-  animation: card-in 420ms both;
+  border-left-width: 4px;
+  border-radius: 9px;
 }
 
 .record-summary {
-  gap: 16px;
-  min-height: 58px;
-  padding: 14px 18px;
+  gap: 12px;
+  min-height: 42px;
+  padding: 8px 12px 8px 10px;
+}
+
+.record-summary-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .record-summary h3 {
@@ -746,7 +890,7 @@ details[open] > summary .record-chevron {
   overflow: hidden;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: clamp(0.82rem, 1.4vw, 1.03rem);
+  font-size: clamp(0.72rem, 1.1vw, 0.86rem);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -757,12 +901,28 @@ details[open] > summary .record-chevron {
 }
 
 .record-card.is-incomplete {
-  border-color: rgba(233, 152, 96, 0.42);
+  border-color: rgba(230, 184, 75, 0.64);
+}
+
+.record-card.is-complete {
+  border-color: rgba(133, 175, 68, 0.64);
+}
+
+.record-card.is-incomplete .record-summary {
+  background: linear-gradient(90deg, rgba(230, 184, 75, 0.18), transparent 55%);
+}
+
+.record-card.is-complete .record-summary {
+  background: linear-gradient(90deg, rgba(182, 217, 73, 0.2), transparent 55%);
+}
+
+.record-card.is-primary {
+  box-shadow: 0 10px 34px rgba(216, 243, 106, 0.13);
 }
 
 .record-head {
   align-items: flex-start;
-  padding: 16px 18px 14px;
+  padding: 9px 14px 8px;
   border-bottom: 1px solid var(--paper-line);
 }
 
@@ -803,6 +963,8 @@ details[open] > summary .record-chevron {
   font-family: var(--mono);
   font-size: 0.54rem;
   letter-spacing: 0.03em;
+  border: 0;
+  cursor: pointer;
 }
 
 .status-pill i {
@@ -824,12 +986,14 @@ details[open] > summary .record-chevron {
 
 .record-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 5px;
   flex-shrink: 0;
 }
 
 .icon-button {
-  padding: 6px 8px;
+  padding: 5px 7px;
   border-radius: 6px;
   color: rgba(23, 27, 24, 0.48);
   font-family: var(--mono);
@@ -851,23 +1015,18 @@ details[open] > summary .record-chevron {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0 1px;
-  padding: 0 18px;
+  padding: 0 14px;
   background: var(--paper-line);
 }
 
 .data-field {
   min-width: 0;
-  min-height: 61px;
-  padding: 11px 12px 9px;
+  min-height: 56px;
+  padding: 9px 10px 7px;
   background: var(--paper);
 }
 
-.field-account,
-.field-password {
-  grid-column: span 2;
-}
-
-.field-phone {
+.field-remark {
   grid-column: span 2;
 }
 
@@ -914,7 +1073,10 @@ details[open] > summary .record-chevron {
   cursor: default;
 }
 
-.remark-input {
+.remark-input,
+.edit-input,
+.edit-select,
+.code-url-input {
   display: block;
   width: 100%;
   min-width: 0;
@@ -931,6 +1093,42 @@ details[open] > summary .record-chevron {
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: border-color 180ms ease;
+}
+
+.edit-select {
+  cursor: pointer;
+}
+
+.edit-input,
+.edit-select,
+.code-url-input {
+  border-bottom-color: rgba(23, 27, 24, 0.18);
+}
+
+.edit-input:focus,
+.edit-select:focus,
+.code-url-input:focus {
+  border-bottom-color: var(--acid-deep);
+  outline: 0;
+}
+
+.group-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(23, 27, 24, 0.48);
+  font-family: var(--mono);
+  font-size: 0.54rem;
+}
+
+.group-editor .edit-select {
+  width: min(210px, 30vw);
+  font-size: 0.6rem;
+}
+
+.code-url-input {
+  width: min(420px, 36vw);
+  font-size: 0.59rem;
 }
 
 .remark-input::placeholder {
@@ -968,7 +1166,7 @@ details[open] > summary .record-chevron {
 .code-strip {
   align-items: flex-end;
   gap: 14px;
-  padding: 12px 18px 14px;
+  padding: 9px 14px 10px;
   border-top: 1px solid rgba(23, 27, 24, 0.13);
   background: rgba(23, 27, 24, 0.035);
 }
@@ -1135,7 +1333,8 @@ details[open] > summary .record-chevron {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.auth-dialog {
+.auth-dialog,
+.group-dialog {
   width: min(430px, calc(100vw - 32px));
   padding: 0;
   border: 0;
@@ -1145,12 +1344,14 @@ details[open] > summary .record-chevron {
   box-shadow: none;
 }
 
-.auth-dialog::backdrop {
+.auth-dialog::backdrop,
+.group-dialog::backdrop {
   background: rgba(8, 11, 9, 0.78);
   backdrop-filter: blur(6px);
 }
 
-.auth-dialog-panel {
+.auth-dialog-panel,
+.group-dialog-panel {
   display: grid;
   gap: 10px;
   padding: 29px 30px 28px;
@@ -1160,7 +1361,8 @@ details[open] > summary .record-chevron {
   box-shadow: 0 25px 80px rgba(0, 0, 0, 0.38);
 }
 
-.auth-dialog h2 {
+.auth-dialog h2,
+.group-dialog h2 {
   margin: 4px 0 0;
   font-family: var(--serif);
   font-size: 2rem;
@@ -1168,7 +1370,8 @@ details[open] > summary .record-chevron {
   letter-spacing: -0.07em;
 }
 
-.auth-dialog p {
+.auth-dialog p,
+.group-dialog p {
   margin: 0 0 7px;
   color: rgba(23, 27, 24, 0.58);
   font-size: 0.78rem;
@@ -1238,6 +1441,29 @@ details[open] > summary .record-chevron {
 .auth-submit:disabled {
   cursor: wait;
   opacity: 0.62;
+}
+
+.group-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.group-dialog-actions > button {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(23, 27, 24, 0.18);
+  border-radius: 8px;
+  color: rgba(23, 27, 24, 0.62);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 0.61rem;
+}
+
+.group-dialog-actions .auth-submit {
+  border-color: var(--acid-deep);
+  color: var(--ink);
+  background: var(--acid);
 }
 
 .confirm-dialog {
@@ -1321,17 +1547,6 @@ details[open] > summary .record-chevron {
   background: #f3b98c;
 }
 
-@keyframes card-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @media (max-width: 1050px) {
   .app-layout {
     grid-template-columns: 220px minmax(0, 1fr);
@@ -1342,15 +1557,17 @@ details[open] > summary .record-chevron {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .field-account,
-  .field-password,
-  .field-phone {
-    grid-column: span 1;
+  .field-remark {
+    grid-column: span 2;
   }
 
   .code-meta {
     flex-wrap: wrap;
     justify-content: flex-end;
+  }
+
+  .code-url-input {
+    width: min(360px, 60vw);
   }
 }
 
@@ -1464,6 +1681,16 @@ details[open] > summary .record-chevron {
     gap: 14px;
   }
 
+  .archive-tools {
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .folder-title small {
+    display: none;
+  }
+
   .search-box {
     width: 100%;
   }
@@ -1538,10 +1765,13 @@ details[open] > summary .record-chevron {
   }
 
   .record-head {
-    padding: 13px 14px 11px;
+    align-items: stretch;
+    flex-direction: column;
+    padding: 10px 13px 9px;
   }
 
   .record-actions {
+    justify-content: flex-start;
     gap: 0;
   }
 
@@ -1550,9 +1780,11 @@ details[open] > summary .record-chevron {
     padding: 0 13px;
   }
 
-  .field-account,
-  .field-password,
-  .field-phone {
+  .record-head {
+    gap: 8px;
+  }
+
+  .field-remark {
     grid-column: span 1;
   }
 
@@ -1568,6 +1800,11 @@ details[open] > summary .record-chevron {
 
   .link-value {
     max-width: 100%;
+  }
+
+  .code-url-input,
+  .group-editor .edit-select {
+    width: 100%;
   }
 
   .checked-at {
