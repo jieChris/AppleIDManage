@@ -7,7 +7,6 @@
   const SCHEMA_VERSION = 2;
   const MAX_GROUP_SIZE = 6;
   const VALID_CODE_STATUSES = new Set(['idle', 'loading', 'found', 'empty', 'blocked']);
-  const VALID_PROFILE_STATUSES = new Set(['complete', 'incomplete']);
   const CODE_LABEL_RE = /(?:验证码|校验码|动态码|安全码|短信码|一次性密码|otp\b|one[-\s]?time(?:\s+password)?|verification(?:\s+code)?|security\s+code|passcode|\bcode\b)/iu;
 
   function asText(value) {
@@ -142,9 +141,7 @@
     if (label === '副邮箱') return { field: 'secondaryEmail', value: clean(value), flag: 'hasSecondaryEmail' };
     if (label === '专用密码') return { field: 'appPassword', value, flag: 'hasAppPassword' };
     if (label === '分组') return { field: 'importGroupName', value: clean(value), flag: 'hasGroup' };
-    if (label === '标记') {
-      return { field: 'profileStatus', value: value === '完善' ? 'complete' : 'incomplete', flag: 'hasProfileStatus' };
-    }
+    if (label === '标记') return { field: 'profileStatus', value: '', flag: 'hasProfileStatus' };
     if (label === '主号') return { field: 'isPrimary', value: /^(?:是|true|1)$/iu.test(value), flag: 'hasPrimary' };
     if (label === '手机号') return { field: 'phone', value: clean(value), flag: 'hasPhone' };
     const codeUrl = normalizeCodeUrl(value);
@@ -280,13 +277,9 @@
     if (!record || typeof record !== 'object') return null;
     const questions = Array.isArray(record.questions) ? record.questions : [];
     const codeStatus = VALID_CODE_STATUSES.has(record.codeStatus) ? record.codeStatus : 'idle';
-    const coreValues = [record.account, record.password, ...questions.slice(0, 3), record.birthDate, record.country];
-    const profileStatus = VALID_PROFILE_STATUSES.has(record.profileStatus)
-      ? record.profileStatus
-      : (questions.length >= 3 && coreValues.every((value) => clean(value)) ? 'complete' : 'incomplete');
     const groupOrder = Math.max(0, Number.parseInt(record.groupOrder, 10) || 0);
 
-    return {
+    const normalized = {
       id: clean(record.id) || makeId(),
       account: clean(record.account),
       password: asText(record.password),
@@ -302,12 +295,13 @@
       codeCheckedAt: clean(record.codeCheckedAt),
       secondaryEmail: clean(record.secondaryEmail),
       appPassword: asText(record.appPassword),
-      profileStatus,
       groupId: clean(record.groupId),
       groupOrder,
       isPrimary: record.isPrimary === true,
       updatedAt: clean(record.updatedAt) || new Date().toISOString(),
     };
+    normalized.profileStatus = isIncomplete(normalized) ? 'incomplete' : 'complete';
+    return normalized;
   }
 
   function normalizeGroup(group) {
@@ -413,7 +407,6 @@
         remark: candidate.hasRemark ? normalized.remark : previous.remark,
         secondaryEmail: candidate.hasSecondaryEmail ? normalized.secondaryEmail : previous.secondaryEmail,
         appPassword: candidate.hasAppPassword ? normalized.appPassword : previous.appPassword,
-        profileStatus: candidate.hasProfileStatus ? normalized.profileStatus : previous.profileStatus,
         groupId: previous.groupId,
         groupOrder: previous.groupOrder,
         isPrimary: candidate.hasPrimary ? normalized.isPrimary : previous.isPrimary,
@@ -561,14 +554,19 @@
 
   function isIncomplete(record) {
     if (!record) return true;
-    const coreValues = [
+    const requiredValues = [
       record.account,
       record.password,
-      ...(record.questions || []),
+      ...(record.questions || []).slice(0, 3),
       record.birthDate,
       record.country,
+      record.phone,
+      record.codeUrl,
+      record.remark,
+      record.secondaryEmail,
+      record.appPassword,
     ];
-    return coreValues.some((value) => !clean(value));
+    return requiredValues.length !== 12 || requiredValues.some((value) => !clean(value));
   }
 
   function escapeHtml(value) {
@@ -747,7 +745,7 @@
       codeUrl: 'https://example.com/code',
       remark: '长期使用',
     }]);
-    console.assert(exported === 'a@example.com----secret----Q1----Q2----Q3----1984/2/25----美国\n+18178668072|https://example.com/code\n备注|长期使用\n标记|完善');
+    console.assert(exported === 'a@example.com----secret----Q1----Q2----Q3----1984/2/25----美国\n+18178668072|https://example.com/code\n备注|长期使用\n标记|未完善');
     console.assert(parseImport(exported).records[0]?.remark === '长期使用');
     console.assert(shouldRetryVaultRequest(new Error('timeout'), 0) === true);
     console.assert(shouldRetryVaultRequest({ status: 500 }, 0) === true);
@@ -769,8 +767,19 @@
       birthDate: '1984/2/25',
       country: '美国',
     });
-    console.assert(legacyProfile.profileStatus === 'complete');
+    console.assert(legacyProfile.profileStatus === 'incomplete');
     console.assert(legacyProfile.secondaryEmail === '' && legacyProfile.appPassword === '');
+    const completeProfile = normalizeRecord({
+      ...legacyProfile,
+      phone: '+18178668072',
+      codeUrl: 'https://example.com/code',
+      remark: '长期使用',
+      secondaryEmail: 'backup@example.com',
+      appPassword: 'app-pass',
+      profileStatus: 'incomplete',
+    });
+    console.assert(completeProfile.profileStatus === 'complete');
+    console.assert(normalizeRecord({ ...completeProfile, secondaryEmail: '', profileStatus: 'complete' }).profileStatus === 'incomplete');
     const group = normalizeGroup({ id: 'g1', name: '常用', updatedAt: '2026-08-13T00:00:00Z' });
     const grouped = normalizeVaultLayout(Array.from({ length: 7 }, (_, index) => normalizeRecord({
       account: `grouped${index}@example.com`,
@@ -1241,7 +1250,7 @@
           <div class="record-body">
             <div class="record-head">
               <div class="record-identity">
-                <button class="status-pill ${incomplete ? 'is-warning' : 'is-ready'}" type="button" data-action="toggle-status" data-record-id="${escapeHtml(record.id)}" data-write ${state.canWrite ? '' : 'disabled'}><i></i>${statusLabel}</button>
+                <span class="status-pill ${incomplete ? 'is-warning' : 'is-ready'}" title="账号资料自动判定"><i></i><span>${statusLabel}</span></span>
                 ${editing ? `<label class="group-editor">分组<select class="edit-select" data-edit-field="groupId">${groupOptions}</select></label>` : ''}
               </div>
               <div class="record-actions">
@@ -1302,12 +1311,15 @@
     return matchesQuery && matchesFilter;
   }
 
-  function render() {
+  function updateStatusStats() {
     const completeCount = state.records.filter((record) => record.profileStatus === 'complete').length;
-    const incompleteCount = state.records.length - completeCount;
     elements.totalCount.textContent = state.records.length;
     elements.completeCount.textContent = completeCount;
-    elements.incompleteCount.textContent = incompleteCount;
+    elements.incompleteCount.textContent = state.records.length - completeCount;
+  }
+
+  function render() {
+    updateStatusStats();
 
     document.querySelectorAll('[data-filter]').forEach((button) => {
       button.classList.toggle('is-active', button.dataset.filter === state.filter);
@@ -1345,6 +1357,19 @@
 
   function getRecordCard(id) {
     return [...elements.recordsList.querySelectorAll('.record-card')].find((card) => card.dataset.recordId === id);
+  }
+
+  function updateRecordStatusUI(record) {
+    if (!record) return;
+    const card = getRecordCard(record.id);
+    const incomplete = record.profileStatus !== 'complete';
+    card?.classList.toggle('is-incomplete', incomplete);
+    card?.classList.toggle('is-complete', !incomplete);
+    const status = card?.querySelector('.status-pill');
+    status?.classList.toggle('is-warning', incomplete);
+    status?.classList.toggle('is-ready', !incomplete);
+    if (status?.lastElementChild) status.lastElementChild.textContent = incomplete ? '未完善' : '完善';
+    updateStatusStats();
   }
 
   function updatePasswordUI(record) {
@@ -1619,11 +1644,7 @@
       return;
     }
     let records = state.records.map((item) => ({ ...item }));
-    if (action === 'toggle-status') {
-      const target = records.find((item) => item.id === recordId);
-      target.profileStatus = target.profileStatus === 'complete' ? 'incomplete' : 'complete';
-      target.updatedAt = nextTimestamp(target.updatedAt);
-    } else if (action === 'set-primary') {
+    if (action === 'set-primary') {
       records.forEach((item) => {
         if (item.groupId === record.groupId) {
           const nextPrimary = item.id === recordId ? !record.isPrimary : false;
@@ -1893,7 +1914,7 @@
       render();
     } else if (action === 'save-edit') {
       saveRecordEdit(recordId);
-    } else if (['toggle-status', 'set-primary', 'move-up', 'move-down'].includes(action)) {
+    } else if (['set-primary', 'move-up', 'move-down'].includes(action)) {
       updateRecordManagement(recordId, action);
     } else if (action === 'delete') {
       deleteRecord(recordId);
@@ -1910,12 +1931,16 @@
       return;
     }
     record.remark = remarkInput.value;
+    record.profileStatus = isIncomplete(record) ? 'incomplete' : 'complete';
     touchRecord(record);
+    updateRecordStatusUI(record);
     const records = state.records.map((item) => ({ ...item }));
     window.clearTimeout(state.remarkTimers.get(record.id));
     state.remarkTimers.set(record.id, window.setTimeout(() => {
       syncSnapshot(records, state.deleted, state.clearAt, { renderResult: false })
         .then(() => {
+          if (state.filter !== 'all' || state.query) render();
+          else updateRecordStatusUI(state.records.find((item) => item.id === record.id));
           const input = getRecordCard(record.id)?.querySelector('[data-action="update-remark"]');
           if (input && document.activeElement !== input) input.value = state.records.find((item) => item.id === record.id)?.remark || '';
         })

@@ -32,7 +32,6 @@ MAX_GROUPS = 1000
 MAX_GROUP_SIZE = 6
 AAD = b"apple-id-vault-state-v1"
 VALID_CODE_STATUSES = {"idle", "loading", "found", "empty", "blocked"}
-VALID_PROFILE_STATUSES = {"complete", "incomplete"}
 EXTENDED_RECORD_FIELDS = (
     "secondaryEmail",
     "appPassword",
@@ -107,6 +106,23 @@ def normalize_code_url(value: object) -> str:
     return source if target.scheme in {"http", "https"} and target.hostname else ""
 
 
+def profile_status_for(record: dict) -> str:
+    questions = record.get("questions") if isinstance(record.get("questions"), list) else []
+    required = [
+        record.get("account"),
+        record.get("password"),
+        *(questions[index] if index < len(questions) else "" for index in range(3)),
+        record.get("birthDate"),
+        record.get("country"),
+        record.get("phone"),
+        record.get("codeUrl"),
+        record.get("remark"),
+        record.get("secondaryEmail"),
+        record.get("appPassword"),
+    ]
+    return "complete" if all(clean(value) for value in required) else "incomplete"
+
+
 def normalize_record(raw: object, fallback_time: str | None = None) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -119,16 +135,12 @@ def normalize_record(raw: object, fallback_time: str | None = None) -> dict | No
     sms_code = text(raw.get("smsCode"), 6)
     if len(sms_code) != 6 or not sms_code.isdigit():
         sms_code = ""
-    profile_status = raw.get("profileStatus")
-    if profile_status not in VALID_PROFILE_STATUSES:
-        core_values = [account, raw.get("password"), *questions[:3], raw.get("birthDate"), raw.get("country")]
-        profile_status = "complete" if len(questions) >= 3 and all(clean(value) for value in core_values) else "incomplete"
     try:
         group_order = max(0, int(raw.get("groupOrder", 0)))
     except (TypeError, ValueError):
         group_order = 0
 
-    return {
+    record = {
         "id": clean(raw.get("id"), 80) or str(uuid.uuid4()),
         "account": account,
         "password": text(raw.get("password"), 4096),
@@ -144,12 +156,13 @@ def normalize_record(raw: object, fallback_time: str | None = None) -> dict | No
         "codeCheckedAt": canonical_timestamp(raw.get("codeCheckedAt")),
         "secondaryEmail": clean(raw.get("secondaryEmail"), 320),
         "appPassword": text(raw.get("appPassword"), 4096),
-        "profileStatus": profile_status,
         "groupId": clean(raw.get("groupId"), 80),
         "groupOrder": group_order,
         "isPrimary": raw.get("isPrimary") is True,
         "updatedAt": timestamp,
     }
+    record["profileStatus"] = profile_status_for(record)
+    return record
 
 
 def normalize_group(raw: object, fallback_time: str | None = None) -> dict | None:
@@ -217,6 +230,7 @@ def normalize_layout(records: list[dict], groups: list[dict]) -> list[dict]:
     group_ids = {group["id"] for group in groups}
     members: dict[str, list[dict]] = {group_id: [] for group_id in group_ids}
     for record in records:
+        record["profileStatus"] = profile_status_for(record)
         if record["groupId"] not in group_ids:
             record.update(groupId="", groupOrder=0, isPrimary=False)
             continue

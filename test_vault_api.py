@@ -4,7 +4,7 @@ import json
 import threading
 import urllib.request
 
-from vault_api import VaultError, VaultHandler, VaultServer, VaultStore, backup_sqlite_database
+from vault_api import VaultError, VaultHandler, VaultServer, VaultStore, backup_sqlite_database, normalize_record
 
 
 def record(account="a@example.com", password="secret", updated_at="2026-08-12T00:00:00Z"):
@@ -97,6 +97,9 @@ class VaultStoreTests(unittest.TestCase):
             **record(),
             "secondaryEmail": "backup@example.com",
             "appPassword": "app-secret",
+            "phone": "+18178668072",
+            "codeUrl": "https://example.com/code",
+            "remark": "长期使用",
             "profileStatus": "complete",
             "groupId": "group-1",
             "groupOrder": 3,
@@ -166,6 +169,9 @@ class VaultStoreTests(unittest.TestCase):
             **record(updated_at="2026-08-12T00:00:00Z"),
             "secondaryEmail": "backup@example.com",
             "appPassword": "app-secret",
+            "phone": "+18178668072",
+            "codeUrl": "https://example.com/code",
+            "remark": "长期使用",
             "profileStatus": "complete",
             "groupId": "group-1",
             "groupOrder": 0,
@@ -173,6 +179,7 @@ class VaultStoreTests(unittest.TestCase):
         }
         store.sync([current], {}, "", [group()], {}, 2)
         legacy = record(password="new-password", updated_at="2026-08-12T00:02:00Z")
+        legacy.update(phone=current["phone"], codeUrl=current["codeUrl"], remark=current["remark"])
 
         state = store.sync([legacy], {}, "", [], {}, 1)
         updated = state["records"][0]
@@ -194,10 +201,31 @@ class VaultStoreTests(unittest.TestCase):
         self.assertEqual(state["deletedGroups"], {})
         self.assertEqual(normalized["secondaryEmail"], "")
         self.assertEqual(normalized["appPassword"], "")
-        self.assertEqual(normalized["profileStatus"], "complete")
+        self.assertEqual(normalized["profileStatus"], "incomplete")
         self.assertEqual(normalized["groupId"], "")
         self.assertEqual(normalized["groupOrder"], 0)
         self.assertFalse(normalized["isPrimary"])
+
+    def test_profile_status_is_derived_from_every_persisted_profile_field(self):
+        complete = {
+            **record(),
+            "phone": "+18178668072",
+            "codeUrl": "https://example.com/code",
+            "remark": "长期使用",
+            "secondaryEmail": "backup@example.com",
+            "appPassword": "app-secret",
+            "profileStatus": "incomplete",
+        }
+
+        self.assertEqual(normalize_record(complete)["profileStatus"], "complete")
+        for field in ("password", "birthDate", "country", "phone", "codeUrl", "remark", "secondaryEmail", "appPassword"):
+            with self.subTest(field=field):
+                self.assertEqual(normalize_record({**complete, field: "", "profileStatus": "complete"})["profileStatus"], "incomplete")
+        for index in range(3):
+            questions = complete["questions"].copy()
+            questions[index] = ""
+            with self.subTest(question=index):
+                self.assertEqual(normalize_record({**complete, "questions": questions, "profileStatus": "complete"})["profileStatus"], "incomplete")
 
     def test_non_http_code_url_is_not_persisted(self):
         store = self.make_store()
