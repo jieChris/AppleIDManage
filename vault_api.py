@@ -28,8 +28,19 @@ SERVICE_GID = 10001
 MAX_REQUEST_BYTES = 4 * 1024 * 1024
 MAX_RECORDS = 5000
 MAX_DELETED = 5000
+MAX_GROUPS = 1000
+MAX_GROUP_SIZE = 6
 AAD = b"apple-id-vault-state-v1"
 VALID_CODE_STATUSES = {"idle", "loading", "found", "empty", "blocked"}
+VALID_PROFILE_STATUSES = {"complete", "incomplete"}
+EXTENDED_RECORD_FIELDS = (
+    "secondaryEmail",
+    "appPassword",
+    "profileStatus",
+    "groupId",
+    "groupOrder",
+    "isPrimary",
+)
 
 
 class VaultError(Exception):
@@ -97,6 +108,14 @@ def normalize_record(raw: object, fallback_time: str | None = None) -> dict | No
     sms_code = text(raw.get("smsCode"), 6)
     if len(sms_code) != 6 or not sms_code.isdigit():
         sms_code = ""
+    profile_status = raw.get("profileStatus")
+    if profile_status not in VALID_PROFILE_STATUSES:
+        core_values = [account, raw.get("password"), *questions[:3], raw.get("birthDate"), raw.get("country")]
+        profile_status = "complete" if len(questions) >= 3 and all(clean(value) for value in core_values) else "incomplete"
+    try:
+        group_order = max(0, int(raw.get("groupOrder", 0)))
+    except (TypeError, ValueError):
+        group_order = 0
 
     return {
         "id": clean(raw.get("id"), 80) or str(uuid.uuid4()),
@@ -112,7 +131,27 @@ def normalize_record(raw: object, fallback_time: str | None = None) -> dict | No
         "codeStatus": status,
         "codeError": clean(raw.get("codeError"), 500),
         "codeCheckedAt": canonical_timestamp(raw.get("codeCheckedAt")),
+        "secondaryEmail": clean(raw.get("secondaryEmail"), 320),
+        "appPassword": text(raw.get("appPassword"), 4096),
+        "profileStatus": profile_status,
+        "groupId": clean(raw.get("groupId"), 80),
+        "groupOrder": group_order,
+        "isPrimary": raw.get("isPrimary") is True,
         "updatedAt": timestamp,
+    }
+
+
+def normalize_group(raw: object, fallback_time: str | None = None) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    group_id = clean(raw.get("id"), 80)
+    name = clean(raw.get("name"), 160)
+    if not group_id or not name:
+        return None
+    return {
+        "id": group_id,
+        "name": name,
+        "updatedAt": canonical_timestamp(raw.get("updatedAt"), fallback_time or now_iso()),
     }
 
 
@@ -128,6 +167,18 @@ def normalize_deleted(raw: object) -> dict[str, str]:
     return result
 
 
+def normalize_deleted_groups(raw: object) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, str] = {}
+    for group_id, timestamp in list(raw.items())[:MAX_GROUPS]:
+        normalized_id = clean(group_id, 80)
+        canonical = canonical_timestamp(timestamp)
+        if normalized_id and canonical:
+            result[normalized_id] = canonical
+    return result
+
+
 def blocked_by(record: dict, clear_at: str, deleted: dict[str, str]) -> bool:
     record_time = parse_timestamp(record["updatedAt"])
     if record_time is None:
@@ -140,11 +191,57 @@ def blocked_by(record: dict, clear_at: str, deleted: dict[str, str]) -> bool:
     )
 
 
+def group_blocked_by(group: dict, clear_at: str, deleted_groups: dict[str, str]) -> bool:
+    group_time = parse_timestamp(group["updatedAt"])
+    clear_time = parse_timestamp(clear_at)
+    deleted_time = parse_timestamp(deleted_groups.get(group["id"], ""))
+    return bool(
+        group_time is None
+        or (clear_time and group_time <= clear_time)
+        or (deleted_time and group_time <= deleted_time)
+    )
+
+
+def normalize_layout(records: list[dict], groups: list[dict]) -> list[dict]:
+    group_ids = {group["id"] for group in groups}
+    members: dict[str, list[dict]] = {group_id: [] for group_id in group_ids}
+    for record in records:
+        if record["groupId"] not in group_ids:
+            record.update(groupId="", groupOrder=0, isPrimary=False)
+            continue
+        members[record["groupId"]].append(record)
+
+    for group_records in members.values():
+        group_records.sort(key=lambda record: (record["groupOrder"], record["account"]))
+        primary_kept = False
+        for index, record in enumerate(group_records):
+            if index >= MAX_GROUP_SIZE:
+                record.update(groupId="", groupOrder=0, isPrimary=False)
+                continue
+            record["groupOrder"] = index
+            record["isPrimary"] = bool(record["isPrimary"] and not primary_kept)
+            primary_kept = primary_kept or record["isPrimary"]
+    return records
+
+
 def normalize_payload(raw: object) -> dict:
     if not isinstance(raw, dict):
         raw = {}
     clear_at = canonical_timestamp(raw.get("clearAt"))
     deleted = normalize_deleted(raw.get("deleted"))
+    deleted_groups = normalize_deleted_groups(raw.get("deletedGroups"))
+    groups: list[dict] = []
+    group_positions: dict[str, int] = {}
+    for candidate in raw.get("groups", []) if isinstance(raw.get("groups"), list) else []:
+        group = normalize_group(candidate)
+        if not group or group_blocked_by(group, clear_at, deleted_groups):
+            continue
+        existing_index = group_positions.get(group["id"])
+        if existing_index is None:
+            group_positions[group["id"]] = len(groups)
+            groups.append(group)
+        elif parse_timestamp(group["updatedAt"]) > parse_timestamp(groups[existing_index]["updatedAt"]):
+            groups[existing_index] = group
     records: list[dict] = []
     positions: dict[str, int] = {}
     for candidate in raw.get("records", []) if isinstance(raw.get("records"), list) else []:
@@ -159,18 +256,41 @@ def normalize_payload(raw: object) -> dict:
         existing = records[existing_index]
         if parse_timestamp(record["updatedAt"]) > parse_timestamp(existing["updatedAt"]):
             records[existing_index] = record
-    return {"records": records[:MAX_RECORDS], "deleted": deleted, "clearAt": clear_at}
+    records = normalize_layout(records[:MAX_RECORDS], groups[:MAX_GROUPS])
+    return {
+        "records": records,
+        "deleted": deleted,
+        "clearAt": clear_at,
+        "groups": groups[:MAX_GROUPS],
+        "deletedGroups": deleted_groups,
+    }
 
 
-def merge_payload(current: dict, incoming: dict) -> dict:
+def merge_payload(current: dict, incoming: dict, schema_version: int = 1) -> dict:
     clear_at = later_timestamp(current.get("clearAt", ""), incoming.get("clearAt", ""))
     deleted = dict(current.get("deleted", {}))
     for account, timestamp in incoming.get("deleted", {}).items():
         deleted[account] = later_timestamp(deleted.get(account, ""), timestamp)
+    deleted_groups = dict(current.get("deletedGroups", {}))
+    for group_id, timestamp in incoming.get("deletedGroups", {}).items():
+        deleted_groups[group_id] = later_timestamp(deleted_groups.get(group_id, ""), timestamp)
+
+    groups: list[dict] = []
+    group_positions: dict[str, int] = {}
+    for source in (current.get("groups", []), incoming.get("groups", [])):
+        for group in source:
+            if group_blocked_by(group, clear_at, deleted_groups):
+                continue
+            existing_index = group_positions.get(group["id"])
+            if existing_index is None:
+                group_positions[group["id"]] = len(groups)
+                groups.append(group)
+            elif parse_timestamp(group["updatedAt"]) > parse_timestamp(groups[existing_index]["updatedAt"]):
+                groups[existing_index] = group
 
     records: list[dict] = []
     positions: dict[str, int] = {}
-    for source in (current.get("records", []), incoming.get("records", [])):
+    for source_index, source in enumerate((current.get("records", []), incoming.get("records", []))):
         for record in source:
             if blocked_by(record, clear_at, deleted):
                 continue
@@ -179,8 +299,17 @@ def merge_payload(current: dict, incoming: dict) -> dict:
                 positions[record["account"]] = len(records)
                 records.append(record)
             elif parse_timestamp(record["updatedAt"]) > parse_timestamp(records[existing_index]["updatedAt"]):
+                if schema_version < 2 and source_index == 1:
+                    record = {**record, **{field: records[existing_index][field] for field in EXTENDED_RECORD_FIELDS}}
                 records[existing_index] = record
-    return {"records": records[:MAX_RECORDS], "deleted": deleted, "clearAt": clear_at}
+    records = normalize_layout(records[:MAX_RECORDS], groups[:MAX_GROUPS])
+    return {
+        "records": records,
+        "deleted": deleted,
+        "clearAt": clear_at,
+        "groups": groups[:MAX_GROUPS],
+        "deletedGroups": deleted_groups,
+    }
 
 
 class VaultStore:
@@ -251,12 +380,26 @@ class VaultStore:
             revision, payload = self._read(connection)
         return self._public(revision, payload)
 
-    def sync(self, records: list, deleted: dict, clear_at: str) -> dict:
-        incoming = normalize_payload({"records": records, "deleted": deleted, "clearAt": clear_at})
+    def sync(
+        self,
+        records: list,
+        deleted: dict,
+        clear_at: str,
+        groups: list | None = None,
+        deleted_groups: dict | None = None,
+        schema_version: int = 1,
+    ) -> dict:
+        incoming = normalize_payload({
+            "records": records,
+            "deleted": deleted,
+            "clearAt": clear_at,
+            "groups": groups or [],
+            "deletedGroups": deleted_groups or {},
+        })
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             revision, current = self._read(connection)
-            merged = merge_payload(current, incoming)
+            merged = merge_payload(current, incoming, schema_version)
             revision += 1
             self._write(connection, revision, merged)
             connection.commit()
@@ -269,7 +412,15 @@ class VaultStore:
             clear_at = later_timestamp(current.get("clearAt", ""), now_iso())
             for record in current.get("records", []):
                 clear_at = later_timestamp(clear_at, record["updatedAt"])
-            payload = {"records": [], "deleted": current.get("deleted", {}), "clearAt": clear_at}
+            for group in current.get("groups", []):
+                clear_at = later_timestamp(clear_at, group["updatedAt"])
+            payload = {
+                "records": [],
+                "deleted": current.get("deleted", {}),
+                "clearAt": clear_at,
+                "groups": [],
+                "deletedGroups": {},
+            }
             revision += 1
             self._write(connection, revision, payload)
             connection.commit()
@@ -391,9 +542,26 @@ class VaultHandler(BaseHTTPRequestHandler):
             records = payload.get("records", [])
             deleted = payload.get("deleted", {})
             clear_at = payload.get("clearAt", "")
-            if not isinstance(records, list) or not isinstance(deleted, dict) or not isinstance(clear_at, str):
+            groups = payload.get("groups", [])
+            deleted_groups = payload.get("deletedGroups", {})
+            schema_version = payload.get("schemaVersion", 1)
+            if (
+                not isinstance(records, list)
+                or not isinstance(deleted, dict)
+                or not isinstance(clear_at, str)
+                or not isinstance(groups, list)
+                or not isinstance(deleted_groups, dict)
+                or not isinstance(schema_version, int)
+            ):
                 raise RequestError("请求体字段格式无效")
-            self._send_json(200, self.server.store.sync(records, deleted, clear_at))
+            self._send_json(200, self.server.store.sync(
+                records,
+                deleted,
+                clear_at,
+                groups,
+                deleted_groups,
+                schema_version,
+            ))
         except RequestError as error:
             self._send_json(error.status, {"error": str(error)})
         except VaultError:
