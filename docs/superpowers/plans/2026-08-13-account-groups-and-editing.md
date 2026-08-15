@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 为共享档案柜增加最多 6 人的文件夹分组、组内排序与主号，以及除账号/登录密码外的紧凑资料编辑。
+**Goal:** 为共享档案柜增加最多 6 人的文件夹分组、组内排序与主号、账号邮箱及资料编辑，并支持导出任意选中账号；登录密码保持只读。
 
 **Architecture:** 扩展现有单行 AES-GCM 加密状态，不增加数据库表。浏览器负责交互预检，Python 存储层负责最终合并、旧客户端兼容和分组约束收敛；所有写入继续复用 `/vault/sync`。
 
@@ -70,7 +70,7 @@ Expected: 语法通过并输出 `parser self-check: ok`。
 
 - [ ] **Step 1: 添加页面骨架**
 
-在档案工具栏加入“新建分组”，增加复用的新建/改名分组 dialog；脚本缓存版本递增。
+在档案工具栏加入“新建分组”和“导出选中”，账号摘要加入原生复选框，增加复用的新建/改名分组 dialog；脚本缓存版本递增。
 
 - [ ] **Step 2: 渲染文件夹和账号操作**
 
@@ -78,7 +78,7 @@ Expected: 语法通过并输出 `parser self-check: ok`。
 
 - [ ] **Step 3: 实现原位编辑**
 
-编辑态保持账号和登录密码为复制按钮，其余字段为输入框；保存时校验邮箱、HTTP(S) 取码链接、目标组容量，成功后更新时间并同步，失败保持编辑态。
+编辑态保持登录密码为复制按钮，账号邮箱及其余资料为输入框；保存时校验邮箱、重复账号、HTTP(S) 取码链接和目标组容量。账号改名同时提交旧邮箱删除水印，成功后更新时间并同步，失败保持编辑态。
 
 - [ ] **Step 4: 保持三行信息网格**
 

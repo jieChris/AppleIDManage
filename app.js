@@ -863,6 +863,7 @@
     query: '',
     revealed: new Set(),
     editing: new Set(),
+    selectedRecords: new Set(),
     expandedGroups: new Set(),
     expandedRecords: new Set(),
     editingGroupId: '',
@@ -877,6 +878,7 @@
     importInput: document.querySelector('#importInput'),
     parseButton: document.querySelector('#parseButton'),
     exportAllButton: document.querySelector('#exportAllButton'),
+    exportSelectedButton: document.querySelector('#exportSelectedButton'),
     clearAllButton: document.querySelector('#clearAllButton'),
     syncButton: document.querySelector('#syncButton'),
     syncStatus: document.querySelector('#syncStatus'),
@@ -933,6 +935,11 @@
     if (elements.clearAllButton) elements.clearAllButton.disabled = !writable;
     if (elements.exportAllButton) {
       elements.exportAllButton.disabled = !state.records.length || ['loading', 'syncing', 'auth'].includes(state.syncStatus);
+    }
+    if (elements.exportSelectedButton) {
+      const count = state.selectedRecords.size;
+      elements.exportSelectedButton.disabled = !count;
+      elements.exportSelectedButton.textContent = count ? `导出选中 (${count})` : '导出选中';
     }
     document.querySelectorAll('[data-write]').forEach((control) => {
       control.disabled = !writable || control.hasAttribute('data-write-blocked');
@@ -1002,6 +1009,7 @@
     const groupIds = new Set(['', ...state.groups.map((group) => group.id)]);
     state.editing.forEach((id) => { if (!recordIds.has(id)) state.editing.delete(id); });
     state.revealed.forEach((id) => { if (!recordIds.has(id)) state.revealed.delete(id); });
+    state.selectedRecords.forEach((id) => { if (!recordIds.has(id)) state.selectedRecords.delete(id); });
     state.expandedRecords.forEach((id) => { if (!recordIds.has(id)) state.expandedRecords.delete(id); });
     state.expandedGroups.forEach((id) => { if (!groupIds.has(id)) state.expandedGroups.delete(id); });
     return true;
@@ -1242,6 +1250,8 @@
       <article class="record-card ${incomplete ? 'is-incomplete' : 'is-complete'} ${record.isPrimary ? 'is-primary' : ''}" data-record-id="${escapeHtml(record.id)}">
         <details class="record-details" ${editing || state.expandedRecords.has(record.id) ? 'open' : ''}>
           <summary class="record-summary">
+            <input class="record-select" type="checkbox" data-select-record="${escapeHtml(record.id)}"
+              ${state.selectedRecords.has(record.id) ? 'checked' : ''} aria-label="选择账号 ${escapeHtml(record.account)}" />
             <div class="record-summary-main">
               <h3>${escapeHtml(record.account || '未命名账号')}</h3>
             </div>
@@ -1264,7 +1274,7 @@
             </div>
 
             <div class="record-grid">
-              ${renderCopyField(record, 'account', '账号', record.account, { className: 'field-account' })}
+              ${editing ? renderEditField(record, 'account', '账号邮箱', record.account, { type: 'email', className: 'field-account' }) : renderCopyField(record, 'account', '账号', record.account, { className: 'field-account' })}
               ${renderCopyField(record, 'password', '密码', record.password, { sensitive: true, className: 'field-password' })}
               ${editing ? renderEditField(record, 'secondaryEmail', '副邮箱', record.secondaryEmail, { type: 'email' }) : renderCopyField(record, 'secondaryEmail', '副邮箱', record.secondaryEmail)}
               ${editing ? renderEditField(record, 'appPassword', '专用密码', record.appPassword) : renderCopyField(record, 'appPassword', '专用密码', record.appPassword, { sensitive: true })}
@@ -1574,6 +1584,17 @@
       input.dataset.editField,
       input.dataset.editField === 'appPassword' ? input.value : input.value.trim(),
     ]));
+    const account = clean(values.account ?? record.account);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(account)) {
+      notify('账号邮箱格式不正确', 'warning');
+      card.querySelector('[data-edit-field="account"]')?.focus();
+      return;
+    }
+    if (state.records.some((item) => item.id !== recordId && item.account.toLocaleLowerCase() === account.toLocaleLowerCase())) {
+      notify('这个账号邮箱已经存在', 'warning');
+      card.querySelector('[data-edit-field="account"]')?.focus();
+      return;
+    }
     if (values.secondaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(values.secondaryEmail)) {
       notify('副邮箱格式不正确', 'warning');
       card.querySelector('[data-edit-field="secondaryEmail"]')?.focus();
@@ -1604,8 +1625,10 @@
     const value = (field) => values[field] ?? getFieldValue(record, field);
     const codeUrl = normalizeCodeUrl(values.codeUrl ?? record.codeUrl);
     const codeUrlChanged = codeUrl !== record.codeUrl;
+    const updatedAt = nextTimestamp(record.updatedAt);
     const next = {
       ...record,
+      account,
       questions: [value('question1'), value('question2'), value('question3')],
       birthDate: value('birthDate'),
       country: value('country'),
@@ -1618,17 +1641,19 @@
       groupOrder: groupId === record.groupId ? record.groupOrder : state.records.filter((item) => item.groupId === groupId).length,
       isPrimary: groupId === record.groupId ? record.isPrimary : false,
       ...(codeUrlChanged ? { smsCode: '', codeStatus: 'idle', codeError: '', codeCheckedAt: '' } : {}),
-      updatedAt: nextTimestamp(record.updatedAt),
+      updatedAt,
     };
     const records = normalizeVaultLayout(state.records.map((item) => item.id === recordId ? next : item), state.groups);
+    const accountChanged = account !== record.account;
+    const deleted = accountChanged ? { ...state.deleted, [record.account]: nextTimestamp(updatedAt) } : state.deleted;
     const previousRecords = state.records;
     state.records = records;
-    syncSnapshot(records, state.deleted, state.clearAt, { renderResult: false })
+    syncSnapshot(records, deleted, state.clearAt, { renderResult: false })
       .then(() => {
         state.editing.delete(recordId);
         state.expandedRecords.add(recordId);
         render();
-        notify('账号资料已保存', 'success');
+        notify(accountChanged ? '账号邮箱和资料已保存' : '账号资料已保存', 'success');
       })
       .catch(() => {
         if (state.records === records) state.records = previousRecords;
@@ -1778,23 +1803,35 @@
       });
   }
 
+  function downloadRecords(records, filename) {
+    const content = formatExportText(records, state.groups);
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${filename}-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    notify(`已导出 ${records.length} 条账号资料`, 'success');
+  }
+
   function handleExportAll() {
     if (!state.records.length) {
       notify('档案柜里没有可导出的账号', 'warning');
       return;
     }
+    downloadRecords(state.records, 'apple-id-vault');
+  }
 
-    const content = formatExportText(state.records, state.groups);
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `apple-id-vault-${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    notify(`已导出 ${state.records.length} 条账号资料`, 'success');
+  function handleExportSelected() {
+    const records = state.records.filter((record) => state.selectedRecords.has(record.id));
+    if (!records.length) {
+      notify('请先勾选要导出的账号', 'warning');
+      return;
+    }
+    downloadRecords(records, 'apple-id-vault-selected');
   }
 
   function deleteRecord(id) {
@@ -1848,6 +1885,7 @@
 
   elements.parseButton.addEventListener('click', handleImport);
   elements.exportAllButton.addEventListener('click', handleExportAll);
+  elements.exportSelectedButton?.addEventListener('click', handleExportSelected);
   elements.clearAllButton.addEventListener('click', clearAll);
   elements.syncButton.addEventListener('click', () => loadServerState());
   elements.authForm?.addEventListener('submit', handleAuthSubmit);
@@ -1862,6 +1900,14 @@
   elements.searchInput.addEventListener('input', (event) => {
     state.query = event.target.value.trim();
     render();
+  });
+
+  document.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-select-record]');
+    if (!checkbox) return;
+    if (checkbox.checked) state.selectedRecords.add(checkbox.dataset.selectRecord);
+    else state.selectedRecords.delete(checkbox.dataset.selectRecord);
+    setWriteAvailability();
   });
 
   document.addEventListener('click', (event) => {

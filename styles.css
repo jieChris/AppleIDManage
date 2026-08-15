@@ -686,6 +686,7 @@ details[open] > summary .record-chevron {
 
 .archive-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 14px;
@@ -879,9 +880,19 @@ details[open] > summary .record-chevron {
 
 .record-summary-main {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.record-select {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--acid-deep);
+  cursor: pointer;
 }
 
 .record-summary h3 {

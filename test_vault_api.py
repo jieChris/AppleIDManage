@@ -59,6 +59,20 @@ class VaultStoreTests(unittest.TestCase):
         restored = store.sync([newer], {}, "")
         self.assertEqual(restored["records"], [])
 
+    def test_account_rename_uses_delete_watermark_and_old_snapshot_cannot_revive(self):
+        store = self.make_store()
+        old = record()
+        renamed = {**old, "account": "renamed@example.com", "updatedAt": "2026-08-12T00:01:00Z"}
+        store.sync([old], {}, "")
+
+        state = store.sync([renamed], {"a@example.com": "2026-08-12T00:02:00Z"}, "")
+
+        self.assertEqual([item["account"] for item in state["records"]], ["renamed@example.com"])
+        self.assertEqual(
+            [item["account"] for item in store.sync([old], {}, "")["records"]],
+            ["renamed@example.com"],
+        )
+
 
     def test_clear_watermark_blocks_old_snapshot(self):
         store = self.make_store()
